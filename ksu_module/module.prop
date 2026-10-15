@@ -1,0 +1,6 @@
+id=frida_patched_server
+name=Frida Server (sijan2 patched 17.5.2-android16)
+version=v17.5.2-android16
+versionCode=17502
+author=hex91
+description=Autostart sijan2 patched frida-server 17.5.2-android16 at boot. Android 14/15/16 compatible (disables zygote/system_server injection, fixed ART offsets). Listens 127.0.0.1:27042; use: adb forward tcp:27042 tcp:27042. Touch disable file in module dir to stop autostart.

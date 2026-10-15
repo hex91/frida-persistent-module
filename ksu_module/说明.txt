@@ -1,0 +1,39 @@
+========================================
+ frida 持久化模块 — 配置说明
+========================================
+
+【这是什么】
+开机自动启动 frida-server（sijan2 补丁版 17.5.2，Android 14/15/16 兼容）。
+监听 127.0.0.1:<PORT>，PC 端通过 adb forward 连接。
+
+【怎么改端口 / 进程名】(对抗 frida 检测)
+
+方法一：配置助手（推荐，改完立即生效）
+  用 root shell（adb shell su 或 Termux）执行：
+    sh /data/adb/modules/frida_patched_server/set_config.sh
+    （无参数运行 = 查看当前配置和用法）
+
+    修改示例：
+    sh /data/adb/modules/frida_patched_server/set_config.sh 39527 sysmon
+
+方法二：直接编辑本目录下的 config.sh（MT管理器等 root 文件管理器）
+    PORT=27042        ← 端口
+    BIN_NAME=frida-server  ← 进程名（也是文件名, ≤15 字符）
+    改完重启手机，或执行：
+    sh /data/adb/modules/frida_patched_server/set_config.sh restart
+
+【进程名规则】
+  - 即磁盘文件名，Linux 进程名上限 15 字符
+  - 只允许字母数字和 . _ -
+  - 母本 frida-server 保留，改名副本开机自动生成
+
+【改了端口后 PC 端怎么连】
+    adb forward tcp:<新端口> tcp:<新端口>
+    python run_frida.py <脚本.js> [时长秒] <新端口>
+
+【禁用 / 卸载】
+    禁用自启: touch /data/adb/modules/frida_patched_server/disable 后重启
+    彻底卸载: KernelSU/SukiSU 管理器里移除模块
+
+【完整文档】
+    PC 端: Desktop\hans\workbuddy\Android逆向\frida持久化模块使用文档.md
