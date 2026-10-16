@@ -1,5 +1,8 @@
 # frida-persistent-module
 
+[![Release](https://img.shields.io/github/v/release/hex91/frida-persistent-module?label=Release)](https://github.com/hex91/frida-persistent-module/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/hex91/frida-persistent-module/total?label=Downloads)](https://github.com/hex91/frida-persistent-module/releases)
+
 KernelSU / Magisk / SukiSU 通用模块：开机自启 **sijan2 补丁版 frida-server 17.5.2-android16**，支持**自定义端口与进程名**（对抗初级 frida 检测）。
 
 > 适用设备：Android 14 / 15 / 16（已实测 Pixel 6 + Android 15 + KernelSU）
