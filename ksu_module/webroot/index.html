@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Frida 服务配置</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1f242e; --line:#2a3038;
+    --fg:#e8ecf3; --muted:#98a2b3; --accent:#4f8cff; --accent2:#2f6fe4;
+    --ok:#39d353; --warn:#f0b429; --err:#ff5c5c;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f4f6fa; --card:#ffffff; --card2:#eef1f7; --line:#dfe4ec;
+      --fg:#1a1d23; --muted:#5f6b7a; --accent:#2f6fe4; --accent2:#1f57c0;
+    }
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{
+    margin:0; padding:14px 14px 40px; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC",Roboto,sans-serif;
+    font-size:15px; line-height:1.5;
+  }
+  h1{font-size:17px; margin:2px 0 12px; font-weight:650; letter-spacing:.2px}
+  h2{font-size:13px; margin:0 0 10px; color:var(--muted); font-weight:600; letter-spacing:.4px; text-transform:uppercase}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px}
+  .row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0}
+  .row + .row{border-top:1px solid var(--line)}
+  .k{color:var(--muted); font-size:13px}
+  .v{font-weight:600; font-variant-numeric:tabular-nums}
+  .badge{font-size:12px; padding:2px 8px; border-radius:999px; background:var(--card2); border:1px solid var(--line)}
+  .badge.ok{color:var(--ok)} .badge.off{color:var(--err)} .badge.warn{color:var(--warn)}
+  label{display:block; font-size:13px; color:var(--muted); margin:10px 0 5px}
+  input[type=text],input[type=number]{
+    width:100%; padding:11px 12px; font-size:16px; color:var(--fg);
+    background:var(--card2); border:1px solid var(--line); border-radius:10px; outline:none;
+  }
+  input:focus{border-color:var(--accent)}
+  .hint{font-size:12px; color:var(--muted); margin-top:6px}
+  .btns{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  button{
+    flex:1 1 auto; min-width:96px; padding:11px 14px; font-size:15px; font-weight:600;
+    border-radius:10px; border:1px solid var(--line); background:var(--card2); color:var(--fg);
+  }
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  button:active{transform:scale(.985)}
+  button:disabled{opacity:.55}
+  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+  .chip{padding:7px 12px; font-size:13px; border-radius:999px; background:var(--card2); border:1px solid var(--line); color:var(--fg)}
+  pre{
+    margin:0; padding:11px; background:var(--card2); border:1px solid var(--line); border-radius:10px;
+    font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-all; max-height:190px; overflow:auto;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--fg);
+  }
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; word-break:break-all}
+  details summary{cursor:pointer; color:var(--muted); font-size:13px; font-weight:600; letter-spacing:.3px}
+  details[open] summary{margin-bottom:10px}
+  .switch{position:relative; width:50px; height:28px; flex:0 0 auto}
+  .switch input{opacity:0; width:0; height:0}
+  .slider{position:absolute; inset:0; background:var(--card2); border:1px solid var(--line); border-radius:999px; transition:.18s}
+  .slider:before{content:""; position:absolute; width:20px; height:20px; left:3px; top:3px; border-radius:50%; background:var(--muted); transition:.18s}
+  .switch input:checked + .slider{background:var(--accent); border-color:var(--accent)}
+  .switch input:checked + .slider:before{transform:translateX(22px); background:#fff}
+  .out{margin-top:10px}
+  .err{color:var(--err)}
+</style>
+</head>
+<body>
+
+<h1>Frida 服务配置</h1>
+
+<div class="card">
+  <h2>当前状态</h2>
+  <div class="row"><span class="k">进程名</span><span class="v mono" id="s-bin">-</span></div>
+  <div class="row"><span class="k">端口</span><span class="v mono" id="s-port">-</span></div>
+  <div class="row"><span class="k">运行状态</span><span id="s-run" class="badge">-</span></div>
+  <div class="row"><span class="k">开机自启</span><span id="s-auto" class="badge">-</span></div>
+  <div class="row"><span class="k">模块版本</span><span class="v" id="s-ver">-</span></div>
+</div>
+
+<div class="card">
+  <h2>修改（立即生效）</h2>
+  <label>端口</label>
+  <input type="number" id="in-port" min="1024" max="65535" inputmode="numeric" placeholder="1024 - 65535">
+  <label>进程名</label>
+  <input type="text" id="in-bin" maxlength="15" placeholder="≤15 字符，字母数字 . _ -">
+  <div class="hint">改进程名会重建改名副本并重启服务，连接中的会话会断开。</div>
+  <div class="chips">
+    <button class="chip" type="button" id="b-randport">随机端口</button>
+    <button class="chip" type="button" id="b-randbin">随机进程名</button>
+    <button class="chip" type="button" id="b-sysmon">用 sysmon</button>
+  </div>
+  <div class="btns">
+    <button class="primary" id="b-apply">应用并重启</button>
+    <button id="b-refresh">刷新状态</button>
+  </div>
+  <div class="out" id="out-apply" hidden><pre id="pre-apply"></pre></div>
+</div>
+
+<div class="card">
+  <div class="row">
+    <div>
+      <div class="v">开机自动启动</div>
+      <div class="hint" style="margin-top:2px">关闭后重启手机不会自动运行，模块仍保留</div>
+    </div>
+    <label class="switch"><input type="checkbox" id="sw-auto"><span class="slider"></span></label>
+  </div>
+  <div class="out" id="out-auto" hidden><pre id="pre-auto"></pre></div>
+</div>
+
+<div class="card">
+  <h2>PC 端连接</h2>
+  <pre id="pc-cmd">-</pre>
+  <div class="btns"><button id="b-copy">复制命令</button></div>
+</div>
+
+<div class="card">
+  <details>
+    <summary>高级：模块显示名 / 版本（伪装用）</summary>
+    <label>模块显示名</label>
+    <input type="text" id="in-name" placeholder="System Monitor">
+    <label>显示版本</label>
+    <input type="text" id="in-ver" placeholder="1.5.0">
+    <label>版本代码（纯数字）</label>
+    <input type="number" id="in-code" placeholder="10500">
+    <div class="btns"><button id="b-save-meta">保存显示信息</button></div>
+    <div class="out" id="out-meta" hidden><pre id="pre-meta"></pre></div>
+  </details>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // 模块目录：优先 /data/adb/modules，升级中可能在 modules_update
+  var MOD = "/data/adb/modules/frida_patched_server";
+
+  function $(id) { return document.getElementById(id); }
+
+  // ksu.exec 在不同管理器版本里有多种签名，这里统一成 Promise
+  function exec(cmd) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      function done(v) { if (!settled) { settled = true; resolve(v); } }
+      function norm(errno, stdout, stderr) {
+        return { errno: errno | 0, stdout: String(stdout == null ? "" : stdout), stderr: String(stderr == null ? "" : stderr) };
+      }
+      if (typeof ksu === "undefined" || !ksu || typeof ksu.exec !== "function") {
+        done({ errno: -99, stdout: "", stderr: "当前环境没有 ksu API，请从管理器打开此页面" });
+        return;
+      }
+      try {
+        var ret = ksu.exec(cmd, function (errno, stdout, stderr) { done(norm(errno, stdout, stderr)); });
+        if (ret && typeof ret === "object" && ("errno" in ret || "stdout" in ret)) {
+          done(norm(ret.errno, ret.stdout, ret.stderr));
+        } else if (typeof ret === "string") {
+          done({ errno: 0, stdout: ret, stderr: "" });
+        } else if (ret && typeof ret.then === "function") {
+          ret.then(function (o) {
+            done(typeof o === "string" ? { errno: 0, stdout: o, stderr: "" } : norm(o && o.errno, o && o.stdout, o && o.stderr));
+          }, function (e) { done({ errno: -1, stdout: "", stderr: String(e) }); });
+        }
+        setTimeout(function () { done({ errno: -2, stdout: "", stderr: "命令超时" }); }, 20000);
+      } catch (e) {
+        done({ errno: -1, stdout: "", stderr: String(e) });
+      }
+    });
+  }
+
+  function toast(msg) {
+    try { if (ksu && typeof ksu.toast === "function") { ksu.toast(msg); return; } } catch (e) {}
+    console.log(msg);
+  }
+
+  function show(boxId, preId, text, isErr) {
+    var box = $(boxId), pre = $(preId);
+    box.hidden = false;
+    pre.textContent = text || "(无输出)";
+    pre.className = isErr ? "err" : "";
+  }
+
+  function setBadge(el, text, cls) {
+    el.textContent = text;
+    el.className = "badge" + (cls ? " " + cls : "");
+  }
+
+  function fmtUptime(sec) {
+    sec = parseInt(sec, 10);
+    if (!sec || sec < 0) return "";
+    var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+    if (d > 0) return d + " 天 " + h + " 小时";
+    if (h > 0) return h + " 小时 " + m + " 分";
+    return m + " 分钟";
+  }
+
+  var state = { bin: "", port: "", auto: true };
+
+  function loadStatus() {
+    return exec("sh " + MOD + "/set_config.sh status").then(function (r) {
+      if (r.errno !== 0 && !r.stdout) {
+        setBadge($("s-run"), "未知", "warn");
+        return;
+      }
+      var map = {};
+      r.stdout.split("\n").forEach(function (line) {
+        var i = line.indexOf("=");
+        if (i > 0) map[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+      });
+
+      state.bin = map.BIN_NAME || "";
+      state.port = map.PORT || "";
+      state.auto = map.AUTOSTART === "1";
+
+      $("s-bin").textContent = state.bin || "-";
+      $("s-port").textContent = state.port ? "127.0.0.1:" + state.port : "-";
+      $("s-ver").textContent = (map.MOD_VERSION || "-") + " (" + (map.MOD_VERSION_CODE || "-") + ")";
+
+      var running = map.LISTEN === "1";
+      var up = fmtUptime(map.UPTIME);
+      setBadge($("s-run"), running ? ("运行中" + (up ? " · " + up : "")) : (map.PID && map.PID !== "0" ? "进程在但未监听" : "未运行"), running ? "ok" : "off");
+      setBadge($("s-auto"), state.auto ? "已开启" : "已关闭", state.auto ? "ok" : "off");
+
+      if (!$("in-port").value) $("in-port").value = state.port;
+      if (!$("in-bin").value) $("in-bin").value = state.bin;
+      if (!$("in-name").value) $("in-name").value = map.MOD_NAME || "";
+
+      $("sw-auto").checked = state.auto;
+
+      var cmd = "adb forward tcp:" + state.port + " tcp:" + state.port;
+      $("pc-cmd").textContent = cmd + "\nfrida -H 127.0.0.1:" + state.port + " -n <包名> -l <脚本>";
+    });
+  }
+
+  function apply() {
+    var port = ($("in-port").value || "").trim();
+    var bin = ($("in-bin").value || "").trim();
+
+    if (!/^\d+$/.test(port)) { show("out-apply", "pre-apply", "端口必须是纯数字", true); return; }
+    var p = parseInt(port, 10);
+    if (p < 1024 || p > 65535) { show("out-apply", "pre-apply", "端口需在 1024 - 65535 之间", true); return; }
+    if (!/^[a-zA-Z0-9._-]{1,15}$/.test(bin)) { show("out-apply", "pre-apply", "进程名只能含字母/数字/._- ，且不超过 15 字符", true); return; }
+
+    var btn = $("b-apply");
+    btn.disabled = true;
+    btn.textContent = "应用中…";
+    show("out-apply", "pre-apply", "正在应用：" + bin + " @ 127.0.0.1:" + port + " …");
+
+    exec("sh " + MOD + "/set_config.sh " + p + " " + bin).then(function (r) {
+      var ok = r.errno === 0;
+      btn.disabled = false;
+      btn.textContent = "应用并重启";
+      show("out-apply", "pre-apply", (r.stdout || "") + (r.stderr ? "\n" + r.stderr : ""), !ok);
+      toast(ok ? "已生效" : "失败，请看输出");
+      loadStatus();
+    });
+  }
+
+  // 随机工具
+  function randPort() { return 20000 + Math.floor(Math.random() * 30000); }
+  var NAMES = ["sysmon", "logd", "netd", "vold", "qcomd", "mdmfd", "statsd", "tombd"];
+  function randName() { return NAMES[Math.floor(Math.random() * NAMES.length)]; }
+
+  $("b-randport").onclick = function () { $("in-port").value = randPort(); };
+  $("b-randbin").onclick = function () { $("in-bin").value = randName(); };
+  $("b-sysmon").onclick = function () { $("in-bin").value = "sysmon"; };
+  $("b-apply").onclick = apply;
+  $("b-refresh").onclick = function () { loadStatus(); toast("已刷新"); };
+
+  $("sw-auto").onchange = function () {
+    var on = $("sw-auto").checked;
+    var cmd = "sh " + MOD + "/set_config.sh " + (on ? "on" : "off");
+    exec(cmd).then(function (r) {
+      show("out-auto", "pre-auto", (r.stdout || "") + (r.stderr ? "\n" + r.stderr : ""), r.errno !== 0);
+      toast(on ? "开机自启已开启" : "开机自启已关闭");
+      loadStatus();
+    });
+  };
+
+  $("b-copy").onclick = function () {
+    var el = $("pc-cmd");
+    var text = el.textContent;
+    try {
+      navigator.clipboard.writeText(text).then(function () { toast("已复制"); }, function () { toast("复制失败，请长按选择"); });
+    } catch (e) {
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast("已复制"); } catch (e2) { toast("复制失败，请长按选择"); }
+      document.body.removeChild(ta);
+    }
+  };
+
+  $("b-save-meta").onclick = function () {
+    var name = ($("in-name").value || "").trim();
+    var ver = ($("in-ver").value || "").trim();
+    var code = ($("in-code").value || "").trim();
+    if (!name) { show("out-meta", "pre-meta", "显示名不能为空", true); return; }
+    if (!ver) { show("out-meta", "pre-meta", "版本不能为空", true); return; }
+    if (code && !/^\d+$/.test(code)) { show("out-meta", "pre-meta", "版本代码必须是纯数字", true); return; }
+
+    var cmd = "sh " + MOD + "/set_config.sh name " + JSON.stringify(name) + " && sh " + MOD + "/set_config.sh version " + JSON.stringify(ver) + (code ? " " + code : "");
+    show("out-meta", "pre-meta", "保存中…");
+    exec(cmd).then(function (r) {
+      show("out-meta", "pre-meta", (r.stdout || "") + (r.stderr ? "\n" + r.stderr : ""), r.errno !== 0);
+      toast(r.errno === 0 ? "已保存" : "保存失败");
+      loadStatus();
+    });
+  };
+
+  loadStatus();
+})();
+</script>
+</body>
+</html>

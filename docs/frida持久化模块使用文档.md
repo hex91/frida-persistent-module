@@ -17,9 +17,10 @@
 | `set_config.sh` | 配置助手（改端口/进程名/显示名/版本并立即生效） |
 | `sync_prop.sh` | 把当前配置写回 `module.prop`（保留 SELinux 上下文） |
 | `action.sh` | 管理器「执行/操作」按钮脚本（显示当前状态） |
+| `webroot/index.html` | 模块页 WebUI：图形化改端口/进程名、自启开关（v1.5 新增） |
 | `frida-server` | server 母本二进制（保留原名，作为改名副本的来源） |
 
-工作流程：开机 → 等 boot_completed → 检查 `disable` 开关 → 若配置了 `BIN_NAME` 且改名副本不存在则从母本复制 → 按配置的进程名防重复启动 → 以 `-l 127.0.0.1:PORT` 启动。
+工作流程：开机 → 等 boot_completed → 检查 `noautostart` 开关 → 若配置了 `BIN_NAME` 且改名副本不可用则用硬链接生成 → 按配置的进程名防重复启动 → 以 `-l 127.0.0.1:PORT` 启动。
 
 ---
 
@@ -45,23 +46,27 @@ python run_frida.py vip_bypass.js 60 39527     # 用自定义端口
 
 ## 三、修改端口和进程名（对抗 frida 检测）
 
-### 3.1 三种修改方式（忘了就翻模块目录里的 `说明.txt`）
+### 3.1 四种修改方式（忘了就翻模块目录里的 `说明.txt`）
 
-**方式一：配置助手（推荐，手机上直接敲，改完立即生效）**
+**方式一：模块页 WebUI（图形化，v1.5 新增，推荐）**
+
+管理器模块列表 → 本模块卡片 → 「打开」。页面里直接填端口、进程名，点「应用并重启」即可；还带随机端口/随机进程名、开机自启开关、PC 连接命令一键复制。
+
+**方式二：配置助手（命令行，改完立即生效）**
 
 ```bash
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh'
 # 无参数运行 = 显示当前配置、运行中实例、用法
 
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 sysmon'
-# 一条命令: 写配置 → 杀旧实例 → 复制改名副本 → 启动 → 轮询验证
+# 一条命令: 写配置 → 杀旧实例 → 建改名副本 → 启动 → 轮询验证
 ```
 
-助手会做参数校验（端口 1024-65535、进程名 ≤15 字符且限安全字符），杀旧实例采用「SIGTERM → 3 秒不退 SIGKILL 兜底」，启动后轮询最长 15 秒再报告结果（改名副本 52MB 复制需数秒，避免误报）。
+助手会做参数校验（端口 1024-65535、进程名 ≤15 字符且限安全字符），杀旧实例采用「SIGTERM → 3 秒不退 SIGKILL 兜底」，启动后轮询最长 15 秒再报告结果。改名副本改为**硬链接**生成，秒级完成、不额外占空间。
 
-**方式二：手机 root 文件管理器**（MT管理器等）直接编辑模块目录下的 `config.sh`，改完重启手机或执行 `set_config.sh restart`。
+**方式三：手机 root 文件管理器**（MT管理器等）直接编辑模块目录下的 `config.sh`，改完重启手机或执行 `set_config.sh restart`。
 
-**方式三：PC adb 直接改 config.sh**（见 3.2）。
+**方式四：PC adb 直接改 config.sh**（见 3.2）。
 
 ### 3.2 配置格式（config.sh）
 
@@ -72,8 +77,10 @@ PORT=39527          # 监听端口（只绑 127.0.0.1，外部扫不到）
 BIN_NAME=sysmon     # 进程名 = 磁盘文件名，≤15 字符
 ```
 
-- **改进程名的原理**：Linux 进程的 comm 名取自二进制文件名，`ps -A`/`pidof frida-server`/`grep frida` 这类检测直接失效。母本 `frida-server` 文件保留在模块目录里，开机自动复制出改名副本。
+- **改进程名的原理**：Linux 进程的 comm 名取自二进制文件名，`ps -A`/`pidof frida-server`/`grep frida` 这类检测直接失效。母本 `frida-server` 文件保留在模块目录里，改名副本用**硬链接**生成（同一份数据，不额外占 52MB，启动也是秒级）。
+- **换名会自动清理旧副本**：`set_config.sh` 切换进程名成功后删除上一份改名副本，避免每换一次就多占 52MB。
 - **改端口的原理**：大量检测逻辑写死探测 `127.0.0.1:27042`（frida 默认端口），换端口即失效。
+- **端口冲突保护**：新端口已被别的进程占用时直接报错并打印占用者，不会盲改后连不上。
 
 ### 3.3 生效方式
 
@@ -97,13 +104,13 @@ adb shell "netstat -tln | grep 27042"    # 应无输出
 SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会显示：
 
 ```
-进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 改配置: set_config.sh
+进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 修改: 打开本模块 WebUI
 ```
 
 - 开机时 `service.sh`、每次改配置时 `set_config.sh` 都会调用 `sync_prop.sh` 自动刷新
 - 手动改过 `config.sh` 后，执行 `sync_prop.sh` 即可刷新提示（不必重启 server）
 - 管理器若缓存旧值：退出重进模块页 / 下拉刷新 / 杀掉管理器重开
-- 模块页「执行 / 操作」按钮（`action.sh`）会弹出当前进程名、pid、端口与 PC 连接命令
+- 模块页「执行 / 操作」按钮（`action.sh`）会弹出进程名、pid、已运行时长、端口监听状态、自启状态与最近日志
 
 ### 3.6 伪装模块名 / 显示版本
 
@@ -114,10 +121,21 @@ SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会显�
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
 
 # 改显示版本（第一参数是版本字符串，第二参数是纯数字 versionCode，可省略）
-adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.4.2" 10402'
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.5.0" 10500'
 ```
 
 > `description` 里的端口/进程名随配置自动同步；`id` 必须保持 `frida_patched_server`，否则管理器会当成另一个模块。
+
+### 3.7 开机自启开关（v1.5 新增）
+
+```bash
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh off'   # 关
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh on'    # 开
+```
+
+- `off` 只是在模块目录创建 `noautostart` 文件：重启后不自动启动，**模块本身仍是启用状态**
+- 不要用 `disable` 文件——那是管理器的「模块已禁用」标记，会让整个模块停用
+- WebUI 里也有对应开关，改完立即写入
 
 > 升级提示：`config.sh` 不在模块 zip 内（zip 只有 `config.default.sh`），升级模块不会覆盖你的端口/进程名。
 
@@ -169,10 +187,12 @@ adb shell su -c 'netstat -tln | grep 39527'  # → LISTEN
 ## 六、管理命令速查
 
 ```bash
-# 禁用自启（不改文件，重启即停）
-adb shell su -c 'touch /data/adb/modules/frida_patched_server/disable'
-# 恢复自启
-adb shell su -c 'rm /data/adb/modules/frida_patched_server/disable'
+# 关闭 / 开启开机自启（重启即停，模块仍启用）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh off'
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh on'
+
+# 看运行状态（key=value，脚本可解析）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh status'
 
 # 手动启动（不重启，立即按 config.sh 拉起）
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/service.sh'
@@ -192,8 +212,9 @@ adb shell su -c 'ksud module uninstall frida_patched_server'
 
 ## 七、重装 / 分发
 
-模块 zip：`Desktop\apk_analysis\frida\frida_patched_server-17.5.2-android16.zip`（v2，含 config.sh）。
+模块 zip：仓库 `dist/frida_patched_server-17.5.2-android16.zip`（v1.5，含 WebUI，不含个人 `config.sh`）。
 
 - PC 安装：`adb push <zip> /data/local/tmp/ && adb shell su -c 'ksud module install /data/local/tmp/<zip名>'`
 - 或 KernelSU 管理器 App 直接选 zip 安装
 - 安装后**需重启一次**落位并触发首次自启
+- 升级不会覆盖 `config.sh`（端口/进程名保留）；若模块目录被管理器清空，`service.sh` 会从 `config.default.sh` 播种

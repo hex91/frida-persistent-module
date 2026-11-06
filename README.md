@@ -17,9 +17,10 @@ KernelSU / Magisk / SukiSU 通用模块：开机自启 **sijan2 补丁版 frida-
 │   ├── service.sh               # 开机自启（播种 config.sh → 改名副本 → 启动）
 │   ├── config.default.sh        # 出厂默认配置（升级会覆盖，勿存个人配置）
 │   ├── config.sh                # 个人配置（不在 zip 内，升级不丢失；首次启动生成）
-│   ├── set_config.sh            # 配置助手：改端口/进程名/显示名/版本
+│   ├── set_config.sh            # 配置助手：改端口/进程名/显示名/版本/自启开关
 │   ├── sync_prop.sh             # 把当前配置写回 module.prop（保留 SELinux 上下文）
 │   ├── action.sh                # 管理器「执行/操作」按钮：显示当前状态
+│   ├── webroot/index.html       # 模块页 WebUI：图形化改端口/进程名（无需命令）
 │   ├── 说明.txt                 # 放在手机里的速查说明
 │   └── frida-server             # server 母本（仅打进 zip，不入库，见下）
 ├── dist/
@@ -47,14 +48,27 @@ python frida_scripts/run_frida.py <脚本.js> [时长秒] [端口]
 
 ## 修改端口 / 进程名（对抗检测）
 
-一条命令，改完立即生效：
+### 方式一：模块页 WebUI（图形化，无需命令）
+
+装好后在 SukiSU / KernelSU 模块列表里，本模块卡片上会多一个「**打开**」按钮（WebUI），点进去可以：
+
+- 看到当前**进程名 / 端口 / 运行状态 / 已运行时长 / 开机自启状态**
+- 直接填**端口**和**进程名**，点「应用并重启」立即生效
+- 一键「随机端口 / 随机进程名」，改完自动写回模块列表说明
+- 开关**开机自启**（关闭后重启手机不自动运行，模块仍保留）
+- 复制 PC 端 `adb forward` + `frida` 连接命令
+
+### 方式二：命令行
 
 ```bash
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 sysmon'
 ```
 
 - 无参数运行 `set_config.sh` 可查看当前配置、运行中实例与用法
-- 进程名规则：即磁盘文件名，≤15 字符（Linux comm 名上限），母本保留、副本开机自动生成
+- 进程名规则：即磁盘文件名，≤15 字符（Linux comm 名上限），母本保留、副本自动生成
+- 改名副本用**硬链接**生成：与母本共用同一份数据，不额外占 52MB，启动更快
+- 换进程名会**自动删除旧副本**，不会越换越占空间
+- 端口被占用会直接报错并显示占用者，不会盲改
 - 完整说明：[使用文档](docs/frida持久化模块使用文档.md)
 
 ### 管理器里直接看当前配置（不用记）
@@ -62,7 +76,7 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 s
 安装后，SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会自动显示：
 
 ```
-进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 改配置: set_config.sh
+进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 修改: 打开本模块 WebUI
 ```
 
 - 开机时 `service.sh`、每次改配置时 `set_config.sh` 都会调用 `sync_prop.sh` 自动刷新
@@ -79,7 +93,7 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 s
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
 
 # 改显示版本（第一个是版本字符串，第二个是纯数字 versionCode，可省略）
-adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.4.2" 10402'
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.5.0" 10500'
 ```
 
 > `description` 里的端口/进程名会随配置自动同步；`id` 必须保持 `frida_patched_server` 不变，否则管理器会当成另一个模块。
@@ -97,13 +111,18 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version
 ## 管理命令速查
 
 ```bash
-# 禁用自启（重启即停）
-adb shell su -c 'touch /data/adb/modules/frida_patched_server/disable'
+# 关闭 / 开启开机自启（重启后不自动运行，模块仍启用）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh off'
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh on'
+# 只看运行状态（key=value，适合脚本解析）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh status'
 # 手动按当前配置启动 / 重启
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh restart'
 # 查看运行日志
 adb shell su -c 'cat /data/local/tmp/frida_patched.log'
 ```
+
+> 关闭自启用的是模块目录下的 `noautostart` 文件；不要用 `disable`，那是管理器的「模块已禁用」标记，会让整个模块停用。
 
 ## 声明
 
