@@ -1,51 +1,102 @@
 ========================================
- frida 持久化模块 — 配置说明
+ frida 持久化模块 — 配置说明 (v3)
 ========================================
 
 【这是什么】
 开机自动启动 frida-server（sijan2 补丁版 17.5.2，Android 14/15/16 兼容）。
 监听 127.0.0.1:<PORT>，PC 端通过 adb forward 连接。
+当前配置会同步显示在「模块列表 -> 说明」里，不需要每次去翻 config.sh。
 
-【先看这里：当前配置在哪看】
-打开 SukiSU / KernelSU 管理器 → 模块页，本模块卡片下方会直接显示：
-    当前端口 39527 ・ 进程名 sysmon ｜ 修改: sh .../set_config.sh <新端口> <新进程名>
-改完配置后重进模块页或下拉刷新即可看到最新值。
-模块页的「操作」按钮也会弹出当前配置和运行状态。
+------------------------------------------------------------------
+【一、改端口 / 进程名】(对抗 frida 检测)
+------------------------------------------------------------------
+推荐用配置助手（改完立即生效，并自动同步模块说明）：
 
-【怎么改端口 / 进程名】(对抗 frida 检测)
+    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh'
 
-方法一：配置助手（推荐，改完立即生效）
-  用 root shell（adb shell su 或 Termux）执行：
-    sh /data/adb/modules/frida_patched_server/set_config.sh
-    （无参数运行 = 查看当前配置和用法）
+    # 查看当前配置 + 用法 + 运行中的实例
+    # 修改端口和进程名：
+    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 sysmon'
 
-    修改示例：
-    sh /data/adb/modules/frida_patched_server/set_config.sh 39527 sysmon
+也可以直接编辑 config.sh：
 
-方法二：直接编辑同目录下的 config.sh（MT管理器等 root 文件管理器）
-    PORT=27042        ← 端口
-    BIN_NAME=frida-server  ← 进程名（也是文件名, ≤15 字符）
-    改完重启手机，或执行：
-    sh /data/adb/modules/frida_patched_server/set_config.sh restart
-    只想刷新管理器里的提示（不重启 server）：
-    sh /data/adb/modules/frida_patched_server/set_config.sh sync
+    PORT=39527
+    BIN_NAME=sysmon
 
-注意：config.default.sh 是出厂默认值（升级会覆盖），个人配置写在 config.sh。
-      config.sh 不在模块 zip 内，升级模块不会丢你的端口/进程名。
+改完重启手机，或执行：
+    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh restart'
 
-【进程名规则】
+进程名规则：
   - 即磁盘文件名，Linux 进程名上限 15 字符
   - 只允许字母数字和 . _ -
   - 母本 frida-server 保留，改名副本开机自动生成
 
-【改了端口后 PC 端怎么连】
+------------------------------------------------------------------
+【二、改「模块列表」里显示的名字 / 版本】
+------------------------------------------------------------------
+模块列表显示的内容来自 module.prop。不要手改 module.prop，
+用下面的命令改 config.sh，再自动重新生成 module.prop：
+
+    # 改显示名（可含空格，用引号包住）
+    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
+
+    # 改显示版本（第一个是版本字符串，第二个是纯数字版本代码，可省略）
+    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.4.2" 10402'
+
+改完在管理器里「下拉刷新」或退出重进，即可看到新的名字和版本。
+
+说明：
+  - 这里的「版本」只是模块列表展示用，可以随便写；
+    它和 frida-server 二进制里的版本号（frida --version）无关。
+  - 想彻底伪装，把 name 改成普通系统服务的名字即可。
+  - module.prop 的 id=frida_patched_server 必须保持不变，
+    否则管理器会把它当成另一个模块。
+
+------------------------------------------------------------------
+【三、模块列表下面的「说明」是怎么来的】
+------------------------------------------------------------------
+说明行由 sync_prop.sh 生成，内容形如：
+
+    进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 改配置: set_config.sh
+
+自动同步时机：
+  1) 每次执行 set_config.sh 改端口/进程名/名字/版本后
+  2) 每次开机（service.sh 启动时）
+  3) 手动：su -c 'sh /data/adb/modules/frida_patched_server/sync_prop.sh'
+
+如果列表里还是旧信息：下拉刷新，或退出管理器再进。
+
+------------------------------------------------------------------
+【四、模块列表里的「执行」按钮】
+------------------------------------------------------------------
+本模块带 action.sh，模块列表里会显示「执行」按钮（部分管理器叫「操作」）。
+点一下会弹出当前状态：进程名、pid、端口、PC 连接命令。
+只读，不会重启或修改任何东西。
+
+------------------------------------------------------------------
+【五、改了端口后 PC 端怎么连】
+------------------------------------------------------------------
     adb forward tcp:<新端口> tcp:<新端口>
-    python run_frida.py <脚本.js> [时长秒] <新端口>
+    frida -H 127.0.0.1:<新端口> -n <包名> -l <脚本.js>
 
-【禁用 / 卸载】
+例（当前配置 39527 / sysmon）：
+    adb forward tcp:39527 tcp:39527
+    frida -H 127.0.0.1:39527 -n com.dlxx.mam.Internal -l 02_thread_bypass.js
+
+------------------------------------------------------------------
+【六、禁用 / 卸载】
+------------------------------------------------------------------
     禁用自启: touch /data/adb/modules/frida_patched_server/disable 后重启
-    彻底卸载: KernelSU/SukiSU 管理器里移除模块
+    彻底卸载: KernelSU / SukiSU 管理器里移除模块
 
-【完整文档】
-    PC 端: Desktop\hans\workbuddy\Android逆向\frida持久化模块使用文档.md
-    GitHub: https://github.com/hex91/frida-persistent-module
+------------------------------------------------------------------
+【七、文件说明】
+------------------------------------------------------------------
+    config.sh       配置（端口/进程名/显示名/显示版本）
+    module.prop     模块列表显示信息（由 sync_prop.sh 生成）
+    service.sh      开机自启逻辑
+    set_config.sh   配置助手
+    sync_prop.sh    同步 module.prop 的说明行
+    action.sh       「执行」按钮的内容
+    frida-server    母本二进制（保留）
+    <BIN_NAME>      改名副本（自动生成）

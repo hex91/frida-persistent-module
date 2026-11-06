@@ -13,13 +13,13 @@ KernelSU / Magisk / SukiSU 通用模块：开机自启 **sijan2 补丁版 frida-
 
 ```
 ├── ksu_module/                  # 模块源文件
-│   ├── module.prop              # 模块信息（description 动态显示当前配置）
+│   ├── module.prop              # 模块信息（由 sync_prop.sh 按配置重写）
 │   ├── service.sh               # 开机自启（播种 config.sh → 改名副本 → 启动）
 │   ├── config.default.sh        # 出厂默认配置（升级会覆盖，勿存个人配置）
 │   ├── config.sh                # 个人配置（不在 zip 内，升级不丢失；首次启动生成）
-│   ├── set_config.sh            # 配置助手：一条命令修改并立即生效
-│   ├── sync_desc.sh             # 把当前配置写回模块页提示
-│   ├── action.sh                # 管理器「操作」按钮：显示当前配置与命令
+│   ├── set_config.sh            # 配置助手：改端口/进程名/显示名/版本
+│   ├── sync_prop.sh             # 把当前配置写回 module.prop（保留 SELinux 上下文）
+│   ├── action.sh                # 管理器「执行/操作」按钮：显示当前状态
 │   ├── 说明.txt                 # 放在手机里的速查说明
 │   └── frida-server             # server 母本（仅打进 zip，不入库，见下）
 ├── dist/
@@ -59,16 +59,30 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 s
 
 ### 管理器里直接看当前配置（不用记）
 
-安装后，SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会自动显示**当前端口 / 当前进程名 / 修改命令**：
+安装后，SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会自动显示：
 
 ```
-当前端口 39527 ・ 进程名 sysmon ｜ 修改: sh /data/adb/modules/frida_patched_server/set_config.sh <新端口> <新进程名>（立即生效）
+进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 改配置: set_config.sh
 ```
 
-- 开机时 `service.sh`、改配置时 `set_config.sh` 都会调用 `sync_desc.sh` 自动刷新
+- 开机时 `service.sh`、每次改配置时 `set_config.sh` 都会调用 `sync_prop.sh` 自动刷新
 - 改完重进模块页或下拉刷新即可看到最新值；管理器若缓存旧值，杀掉管理器重开
-- 模块页的「操作」按钮会弹出当前配置、运行状态与常用命令（`action.sh`）
+- 模块页的「执行 / 操作」按钮会弹出当前进程名、pid、端口与 PC 连接命令（`action.sh`）
 - 个人配置 `config.sh` **不在 zip 内**（zip 只带 `config.default.sh`），升级模块不会覆盖，端口/进程名不会丢
+
+### 伪装模块名 / 显示版本
+
+模块列表里显示的名字和版本来自 `module.prop`，不要手改，用命令改 `config.sh` 后自动重写：
+
+```bash
+# 改显示名（示例：伪装成系统监控）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
+
+# 改显示版本（第一个是版本字符串，第二个是纯数字 versionCode，可省略）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.4.2" 10402'
+```
+
+> `description` 里的端口/进程名会随配置自动同步；`id` 必须保持 `frida_patched_server` 不变，否则管理器会当成另一个模块。
 
 ## 检测对抗边界
 
