@@ -26,10 +26,50 @@ KernelSU / Magisk / SukiSU 通用模块：开机自启 **sijan2 补丁版 frida-
 ├── dist/
 │   └── frida_patched_server-17.5.2-android16.zip   # 可直接安装的模块包
 ├── frida_scripts/               # PC 端注入脚本（配套 run_frida.py runner）
+├── templates/                   # ★ Hook 模板集（Java + Native，适配 frida 17）
+│   ├── 00_速查表.md             # API 对照、常用片段、命令、常见坑
+│   ├── 01_java_basic.js         # Java 基础：方法/构造/字段/重载/调用栈/多 ClassLoader
+│   ├── 02_java_advanced.js      # Java 进阶：加密入口/SP/OkHttp/pinning/批量 hook/RPC
+│   ├── 03_native_basic.js       # Native 基础：基址/导出/Interceptor/内存/特征码
+│   ├── 04_native_advanced.js    # Native 进阶：偏移 hook/指令 patch/RegisterNatives/Stalker
+│   ├── 05_common_targets.js     # 常见场景：pinning/root 检测/反调试/Log/剪贴板
+│   ├── 06_rpc_cli.js            # RPC 导出 + CLI 命令速查
+│   └── run_template.py          # 加载器：自动注入 Java bridge + 端口转发
 └── docs/                        # 使用文档 + 兼容性排查报告
 ```
 
 > 说明：52MB 的 `frida-server` 裸二进制不直接入库（GitHub 对 >50MB 文件告警），已完整包含在 `dist/` 的模块 zip 中，安装/打包以 zip 为准。
+
+## Hook 模板集（Java + Native）
+
+`templates/` 是一套**开箱即用**的 hook 模板，每个文件独立可加载，改一个开关就生效，不用从零写样板代码。
+
+```bash
+cd templates
+
+# 1) 看设备上有什么
+python run_template.py --list
+
+# 2) 加载 Java 基础模板（附到已运行应用）
+python run_template.py --js 01_java_basic.js -n com.example.app
+
+# 3) 或启动新进程注入（能抓启动早期逻辑）
+python run_template.py --js 03_native_basic.js -f com.example.app
+```
+
+**为什么需要 `run_template.py`**：从 Frida 17.0 起 Java bridge 不再内置在 GumJS 中，用 Python `create_script()` 加载含 `Java.use` 的脚本会报 `Java is not defined`。加载器会在脚本前自动拼上 bridge，所以用 `frida-python` 也能跑 Java 模板。
+
+| 想做的事 | 看哪个文件 |
+|---|---|
+| 查 API 怎么变、报错怎么修 | [`templates/00_速查表.md`](templates/00_速查表.md) |
+| 第一次写 Java hook | [`templates/01_java_basic.js`](templates/01_java_basic.js) |
+| 抓加密/参数/token | [`templates/02_java_advanced.js`](templates/02_java_advanced.js) |
+| 分析 so、找函数地址 | [`templates/03_native_basic.js`](templates/03_native_basic.js) |
+| 无符号函数、JNI 动态注册 | [`templates/04_native_advanced.js`](templates/04_native_advanced.js) |
+| 绕 pinning / 检测 | [`templates/05_common_targets.js`](templates/05_common_targets.js) |
+| 用 Python 自动化驱动 | [`templates/06_rpc_cli.js`](templates/06_rpc_cli.js) |
+
+> ⚠️ 别对 `systemui` / `system_server` 做 Java hook：系统进程被 hook 后崩溃会牵连 zygote，表现为整机重启。验证脚本请用普通 App。
 
 ## 安装
 
