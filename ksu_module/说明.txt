@@ -1,5 +1,5 @@
 ========================================
- frida 持久化模块 — 配置说明 (v1.5)
+ frida 持久化模块 — 配置说明 (v1.7)
 ========================================
 
 【这是什么】
@@ -9,16 +9,38 @@
 当前配置会同步显示在「模块列表 -> 说明」里，不需要每次去翻 config.sh。
 
 ------------------------------------------------------------------
+【零、frida 版本与来源（尊重开源）】
+------------------------------------------------------------------
+本模块内置的二进制是 sijan2 的补丁版，不是官方原版：
+
+    版本  : frida-server 17.5.2-android16（arm64）
+    来源  : https://github.com/sijan2/frida
+    发布页: https://github.com/sijan2/frida/releases/tag/v17.5.2-android16
+    上游  : https://github.com/frida/frida （frida 原作者 Ole André V. Ravnås）
+    许可  : wxWindows Library Licence（补丁部分版权归 sijan2）
+
+补丁做了什么（Android 15/16 / API 35/36 兼容）：
+  1) Compat Spawn：API 35+ 默认关闭 zygote/system_server 注入，
+     改用 am/monkey 拉起目标 App，避免注入系统进程导致整机卡死或重启
+  2) Java Bridge：修正 API 36 的 ART 类/方法偏移，
+     解决 Java.perform() 触发 ToReflectedMethod SIGSEGV
+
+本模块只做「开机持久化 + 进程名/端口伪装 + WebUI」封装，未修改 frida 本体。
+查看本机实际值：su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh info'
+（WebUI 里的「关于 frida」卡片也能直接看到版本、来源和校验值）
+
+------------------------------------------------------------------
 【一、图形化修改（推荐，v1.5 新增）】
 ------------------------------------------------------------------
 在管理器（SukiSU / KernelSU）模块列表 -> 本模块卡片上点「打开」（WebUI），
 可以直接看到并修改：
 
-    当前进程名 / 端口 / 运行状态 / 开机自启状态 / 模块版本
+    当前进程名 / 端口 / 运行状态 / 开机自启状态 / 模块版本 / frida 版本
     端口输入框 + 进程名输入框 → 应用并重启（立即生效）
     随机端口 / 随机进程名 快捷按钮
     开机自启开关（关掉后重启手机不会自动运行，模块仍保留）
     PC 端连接命令（一键复制）
+    「关于 frida」卡片：版本、来源仓库、上游项目、许可、二进制校验值（可点击跳转）
 
 改完立刻生效，模块列表说明也会同步刷新。
 
@@ -72,7 +94,7 @@ off = 创建 noautostart 文件：重启后不自动启动，但模块仍然启�
     su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
 
     # 改显示版本（第一个是版本字符串，第二个是纯数字版本代码，可省略）
-    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.6.0" 10600'
+    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.7.0" 10700'
 
 改完在管理器里「下拉刷新」或退出重进，即可看到新的名字和版本。
 
@@ -88,7 +110,7 @@ off = 创建 noautostart 文件：重启后不自动启动，但模块仍然启�
 ------------------------------------------------------------------
 说明行由 sync_prop.sh 生成，内容形如：
 
-    进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 修改: 打开本模块 WebUI
+     frida 17.5.2-android16 (sijan2 补丁版) | 进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 修改: WebUI
 
 自动同步时机：
   1) 每次执行 set_config.sh 改端口/进程名/名字/版本后
@@ -126,6 +148,7 @@ PC 连接命令、最近日志。
 ------------------------------------------------------------------
     config.sh         个人配置（端口/进程名/显示名/显示版本；升级不覆盖）
     config.default.sh 出厂默认配置（升级会覆盖，勿存个人配置）
+    frida_info.sh     frida 版本与来源（署名，改二进制时只改这里）
     module.prop       模块列表显示信息（由 sync_prop.sh 生成）
     service.sh        开机自启逻辑
     set_config.sh     配置助手（命令行）

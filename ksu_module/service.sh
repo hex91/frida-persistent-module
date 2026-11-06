@@ -13,8 +13,8 @@ MODDIR=${0%/*}
 PORT=27042
 BIN_NAME=frida-server
 MOD_NAME="System Monitor"
-MOD_VERSION="1.6.0"
-MOD_VERSION_CODE=10600
+MOD_VERSION="1.7.0"
+MOD_VERSION_CODE=10700
 
 # 用户配置不随模块升级丢失：config.sh 不在 zip 内，缺失时依次从
 #   1) 持久化备份 /data/adb/frida_module.conf（模块目录被重装清空也能恢复）

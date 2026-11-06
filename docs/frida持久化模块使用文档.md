@@ -11,6 +11,7 @@
 | 文件 | 作用 |
 |---|---|
 | `module.prop` | 模块信息（由 `sync_prop.sh` 按配置重写，含显示名/版本/说明） |
+| `frida_info.sh` | frida 版本 / 来源 / 校验值（**唯一事实来源**，改二进制只改这里） |
 | `service.sh` | 开机自启脚本（播种 config.sh → 复制改名副本 → 启动 server） |
 | `config.default.sh` | 出厂默认配置（升级会覆盖，勿存个人配置） |
 | `config.sh` | **个人配置：端口 / 进程名 / 显示名 / 显示版本**（不在 zip 内，升级不丢失；首次启动自动生成） |
@@ -21,6 +22,33 @@
 | `frida-server` | server 母本二进制（保留原名，作为改名副本的来源） |
 
 工作流程：开机 → 等 boot_completed → 检查 `noautostart` 开关 → 若配置了 `BIN_NAME` 且改名副本不可用则用硬链接生成 → 按配置的进程名防重复启动 → 以 `-l 127.0.0.1:PORT` 启动。
+
+### 1.1 frida 版本与来源（怎么看 / 怎么署名）
+
+| 项 | 内容 |
+|---|---|
+| 版本 | `frida-server 17.5.2-android16`（arm64） |
+| 补丁作者 | sijan2 — https://github.com/sijan2/frida |
+| 该构建 | https://github.com/sijan2/frida/releases/tag/v17.5.2-android16 |
+| 上游项目 | https://github.com/frida/frida （原作者 Ole André V. Ravnås / @oleavr） |
+| 许可 | wxWindows Library Licence（补丁部分版权归 sijan2） |
+
+三种查看方式，显示的是同一份数据：
+
+```bash
+# 1) 模块列表「说明」第一段就写着
+#    frida 17.5.2-android16 (sijan2 补丁版) | 进程: ... | 端口: ...
+
+# 2) 命令行（一行 key=value，版本号是二进制自己 --version 报的）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh info'
+
+# 3) WebUI 的「关于 frida」卡片：版本 / 来源 / 上游 / 许可 / 二进制大小与 sha256 前 16 位
+#    点「补丁作者仓库」「构建发布页」「上游项目」三行可直接跳系统浏览器
+```
+
+补丁解决什么：API 35+ 默认关闭 zygote/system_server 注入（改用 `am`/`monkey` 拉起，避免整机重启）；修正 API 36 的 ART 类/方法偏移（避免 `Java.perform()` 触发 `ToReflectedMethod` SIGSEGV）。
+
+> 换 frida 版本时只改 `frida_info.sh`，模块说明、`action.sh`、WebUI 会同步跟着变。
 
 ---
 
@@ -121,7 +149,7 @@ SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会显�
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
 
 # 改显示版本（第一参数是版本字符串，第二参数是纯数字 versionCode，可省略）
-adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.6.0" 10600'
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.7.0" 10700'
 ```
 
 > `description` 里的端口/进程名随配置自动同步；`id` 必须保持 `frida_patched_server`，否则管理器会当成另一个模块。

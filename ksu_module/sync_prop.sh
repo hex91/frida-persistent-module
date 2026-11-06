@@ -15,15 +15,21 @@
 MODDIR=${0%/*}
 CONFIG="$MODDIR/config.sh"
 
+# frida 版本 / 来源（唯一事实来源：frida_info.sh）
+[ -f "$MODDIR/frida_info.sh" ] && . "$MODDIR/frida_info.sh"
+[ -z "$FRIDA_VERSION" ]  && FRIDA_VERSION="17.5.2"
+[ -z "$FRIDA_BUILD" ]    && FRIDA_BUILD="android16"
+[ -z "$FRIDA_FLAVOR" ]   && FRIDA_FLAVOR="sijan2 补丁版"
+
 [ -f "$CONFIG" ] && . "$CONFIG"
 
 [ -z "$PORT" ]            && PORT=27042
 [ -z "$BIN_NAME" ]        && BIN_NAME=frida-server
 [ -z "$MOD_NAME" ]        && MOD_NAME="System Monitor"
-[ -z "$MOD_VERSION" ]     && MOD_VERSION="1.6.0"
-[ -z "$MOD_VERSION_CODE" ] && MOD_VERSION_CODE=10600
+[ -z "$MOD_VERSION" ]     && MOD_VERSION="1.7.0"
+[ -z "$MOD_VERSION_CODE" ] && MOD_VERSION_CODE=10700
 
-DESC="进程: $BIN_NAME | 端口: 127.0.0.1:$PORT | PC: adb forward tcp:$PORT tcp:$PORT | 修改: 打开本模块 WebUI"
+DESC="frida $FRIDA_VERSION-$FRIDA_BUILD ($FRIDA_FLAVOR) | 进程: $BIN_NAME | 端口: 127.0.0.1:$PORT | PC: adb forward tcp:$PORT tcp:$PORT | 修改: WebUI"
 
 PROP="$MODDIR/module.prop"
 

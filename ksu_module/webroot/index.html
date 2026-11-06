@@ -64,9 +64,14 @@
   .switch input:checked + .slider:before{transform:translateX(22px); background:#fff}
   .out{margin-top:10px}
   .err{color:var(--err)}
+  .accent{color:var(--accent)}
+  .row.link{cursor:pointer}
+  .row.link:active{opacity:.7}
+  .row .sub{font-size:12px; color:var(--muted); font-weight:400; margin-top:2px; word-break:break-all}
   .warnbox{background:rgba(240,180,41,.12); border:1px solid rgba(240,180,41,.45); color:var(--warn);
     border-radius:10px; padding:9px 11px; font-size:12.5px; margin-top:10px; display:none}
   .warnbox.show{display:block}
+  .credit{font-size:12px; color:var(--muted); margin-top:8px; line-height:1.55}
 </style>
 </head>
 <body>
@@ -80,6 +85,7 @@
   <div class="row"><span class="k">运行状态</span><span id="s-run" class="badge">-</span></div>
   <div class="row"><span class="k">开机自启</span><span id="s-auto" class="badge">-</span></div>
   <div class="row"><span class="k">模块版本</span><span class="v" id="s-ver">-</span></div>
+  <div class="row"><span class="k">frida 版本</span><span class="v mono" id="s-fv">-</span></div>
   <div class="warnbox" id="warn-coll"></div>
 </div>
 
@@ -118,6 +124,47 @@
 </div>
 
 <div class="card">
+  <h2>关于 frida（版本与来源）</h2>
+  <div class="row"><span class="k">版本</span><span class="v mono" id="i-ver">-</span></div>
+  <div class="row"><span class="k">来源</span><span class="v" id="i-flavor">-</span></div>
+  <div class="row link" id="r-repo" data-url="https://github.com/sijan2/frida">
+    <div>
+      <div class="k">补丁作者仓库</div>
+      <div class="sub" id="i-repo">github.com/sijan2/frida</div>
+    </div>
+    <span class="v accent">打开 ›</span>
+  </div>
+  <div class="row link" id="r-release" data-url="https://github.com/sijan2/frida/releases/tag/v17.5.2-android16">
+    <div>
+      <div class="k">构建发布页</div>
+      <div class="sub" id="i-release">releases/tag/v17.5.2-android16</div>
+    </div>
+    <span class="v accent">打开 ›</span>
+  </div>
+  <div class="row link" id="r-up" data-url="https://github.com/frida/frida">
+    <div>
+      <div class="k">上游项目（frida 原作者）</div>
+      <div class="sub" id="i-up">github.com/frida/frida</div>
+    </div>
+    <span class="v accent">打开 ›</span>
+  </div>
+  <div class="row"><span class="k">许可</span><span class="v" id="i-lic">-</span></div>
+  <div class="row">
+    <div>
+      <div class="k">当前二进制</div>
+      <div class="sub mono" id="i-bin">-</div>
+    </div>
+  </div>
+  <div class="credit" id="i-note">
+    本模块只做「持久化 + 伪装 + WebUI」封装，未修改 frida 本体。<br>
+    补丁内容：Android 15/16 兼容（API 35+ 默认关闭 zygote/system_server 注入，改用 am/monkey 拉起；修复 API 36 的 ART 类/方法偏移，避免 Java.perform() 崩溃）。
+  </div>
+  <div class="btns">
+    <button id="b-copy-repo">复制仓库链接</button>
+  </div>
+</div>
+
+<div class="card">
   <h2>PC 端连接</h2>
   <pre id="pc-cmd">-</pre>
   <div class="btns"><button id="b-copy">复制命令</button></div>
@@ -129,9 +176,9 @@
     <label>模块显示名</label>
     <input type="text" id="in-name" placeholder="System Monitor">
     <label>显示版本</label>
-    <input type="text" id="in-ver" placeholder="1.6.0">
+    <input type="text" id="in-ver" placeholder="1.7.0">
     <label>版本代码（纯数字）</label>
-    <input type="number" id="in-code" placeholder="10600">
+    <input type="number" id="in-code" placeholder="10700">
     <div class="btns"><button id="b-save-meta">保存显示信息</button></div>
     <div class="out" id="out-meta" hidden><pre id="pre-meta"></pre></div>
   </details>
@@ -229,6 +276,17 @@
     el.className = "badge" + (cls ? " " + cls : "");
   }
 
+  function copyText(text, okMsg) {
+    try {
+      navigator.clipboard.writeText(text).then(function () { toast(okMsg || "已复制"); }, function () { toast("复制失败，请长按选择"); });
+    } catch (e) {
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast(okMsg || "已复制"); } catch (e2) { toast("复制失败，请长按选择"); }
+      document.body.removeChild(ta);
+    }
+  }
+
   function fmtUptime(sec) {
     sec = parseInt(sec, 10);
     if (!sec || sec < 0) return "";
@@ -240,6 +298,7 @@
   }
 
   var state = { bin: "", port: "", auto: true, busy: false };
+  var INFO = {};   // frida 版本 / 来源（set_config.sh info 的返回）
 
   function loadStatus() {
     return exec("sh " + SCRIPT + " status1").then(function (line) {
@@ -252,6 +311,9 @@
       $("s-bin").textContent = state.bin || "-";
       $("s-port").textContent = state.port ? "127.0.0.1:" + state.port : "-";
       $("s-ver").textContent = (m.ver || "-") + " (" + (m.code || "-") + ")";
+      $("s-fv").textContent = m.fv
+        ? m.fv + (INFO.build ? "-" + INFO.build : "") + (INFO.arch ? " " + INFO.arch : "")
+        : "-";
 
       var running = m.listen === "1";
       var up = fmtUptime(m.up);
@@ -283,6 +345,52 @@
       var cmd = "adb forward tcp:" + state.port + " tcp:" + state.port;
       $("pc-cmd").textContent = cmd + "\nfrida -H 127.0.0.1:" + state.port + " -n <包名> -l <脚本>";
     });
+  }
+
+  // frida 版本 / 来源（只读，打开页面时取一次）
+  function loadInfo() {
+    return exec("sh " + SCRIPT + " info").then(function (line) {
+      var m = parseKV(line);
+      if (!m.fv) return;
+      INFO = m;
+      INFO.build = m.fb;   // 状态卡里拼 "17.5.2-android16" 用
+
+      $("i-ver").textContent = m.fv + (m.fb ? "-" + m.fb : "") + (m.arch ? " · " + m.arch : "");
+      $("i-flavor").textContent = (m.flavor || "sijan2 补丁版") + (m.author ? "（作者 " + m.author + "）" : "");
+      $("i-lic").textContent = m.lic || "-";
+
+      var sz = parseInt(m.size, 10);
+      var sizeTxt = (!sz || sz <= 0) ? "" :
+        (sz >= 1048576 ? (sz / 1048576).toFixed(1) + " MB" : Math.round(sz / 1024) + " KB");
+      var binTxt = (m.file || "frida-server") + (sizeTxt ? " · " + sizeTxt : "");
+      if (m.sha) binTxt += " · sha256 " + m.sha + "…";
+      $("i-bin").textContent = binTxt;
+
+      // 链接按脚本给出的地址覆盖（万一以后换来源，页面自动跟着变）
+      [["r-repo", m.repo], ["r-release", m.release], ["r-up", m.up]].forEach(function (pair) {
+        var el = $(pair[0]);
+        if (!el) return;
+        if (pair[1]) el.setAttribute("data-url", pair[1]);
+      });
+      if (m.repo) $("i-repo").textContent = m.repo.replace(/^https?:\/\//, "");
+      if (m.release) $("i-release").textContent = m.release.replace(/^https?:\/\//, "").replace(/^github\.com\/[^/]+\/[^/]+\//, "");
+      if (m.up) $("i-up").textContent = m.up.replace(/^https?:\/\//, "");
+
+      $("s-fv").textContent = m.fv + (m.fb ? "-" + m.fb : "") + (m.arch ? " " + m.arch : "");
+    }, function () {
+      // 老版本模块没有 info 子命令，静默忽略即可（状态卡里仍有 fv）
+    });
+  }
+
+  // 在浏览器里打开链接（root 下 am start 实测可用；失败时提示长按复制）
+  function openUrl(url) {
+    if (!url) return;
+    exec("am start -a android.intent.action.VIEW -d " + q(url) + " --user 0 >/dev/null 2>&1; echo OPENED")
+      .then(function (line) {
+        if (String(line).indexOf("OPENED") < 0) toast("没打开，试试复制链接");
+      }, function () {
+        toast("打开失败: " + url);
+      });
   }
 
   function setBusy(on) {
@@ -378,7 +486,8 @@
   };
 
   $("b-refresh").onclick = function () {
-    loadStatus().then(function () { toast("已刷新"); }, function (e) { toast("刷新失败: " + e.message); });
+    loadInfo().then(function () { return loadStatus(); })
+      .then(function () { toast("已刷新"); }, function (e) { toast("刷新失败: " + e.message); });
   };
 
   $("b-log").onclick = function () {
@@ -415,15 +524,18 @@
   };
 
   $("b-copy").onclick = function () {
-    var text = $("pc-cmd").textContent;
-    try {
-      navigator.clipboard.writeText(text).then(function () { toast("已复制"); }, function () { toast("复制失败，请长按选择"); });
-    } catch (e) {
-      var ta = document.createElement("textarea");
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); toast("已复制"); } catch (e2) { toast("复制失败，请长按选择"); }
-      document.body.removeChild(ta);
-    }
+    copyText($("pc-cmd").textContent, "已复制");
+  };
+
+  // 关于卡片：整行可点，点开系统浏览器
+  ["r-repo", "r-release", "r-up"].forEach(function (id) {
+    var el = $(id);
+    if (el) el.onclick = function () { openUrl(el.getAttribute("data-url")); };
+  });
+
+  $("b-copy-repo").onclick = function () {
+    var url = ($("r-repo") && $("r-repo").getAttribute("data-url")) || "https://github.com/sijan2/frida";
+    copyText(url, "仓库链接已复制");
   };
 
   $("b-save-meta").onclick = function () {
@@ -449,7 +561,8 @@
     });
   };
 
-  loadStatus().then(null, function (e) {
+  // 先取 frida 版本/来源（顺带把状态卡的 frida 版本补全），再取运行状态
+  loadInfo().then(function () { return loadStatus(); }).then(null, function (e) {
     setBadge($("s-run"), "读取失败", "warn");
     show("out-apply", "pre-apply", "无法读取状态：" + e.message, true);
   });

@@ -9,6 +9,47 @@ KernelSU / Magisk / SukiSU 通用模块：开机自启 **sijan2 补丁版 frida-
 >
 > 背景：frida 官方 17.2~17.5.x 在 Android 14/15 上存在 ART 兼容 bug（注入即崩 / 拖垮 system_server），本模块内置 [sijan2/frida](https://github.com/sijan2/frida) v17.5.2-android16 补丁版（禁用 zygote/system_server 注入 + 修复 ART 偏移），详见 [兼容性排查报告](docs/frida兼容性问题排查报告_Pixel6_Android15.md)。
 
+## frida 二进制来源与署名
+
+本模块**不修改 frida 本体**，只做「开机持久化 + 进程名/端口伪装 + WebUI 配置」的封装。内置的 `frida-server` 是社区的 Android 15/16 兼容补丁版，出处如下，请一并尊重原作者：
+
+| 项 | 内容 |
+|---|---|
+| 二进制 | `frida-server 17.5.2-android16`（arm64） |
+| 打包 / 补丁作者 | **sijan2** |
+| 补丁仓库 | https://github.com/sijan2/frida |
+| 该构建发布页 | https://github.com/sijan2/frida/releases/tag/v17.5.2-android16 |
+| 上游项目（原作者） | [frida/frida](https://github.com/frida/frida) — Ole André V. Ravnås（[@oleavr](https://github.com/oleavr)） |
+| 许可 | wxWindows Library Licence（补丁部分版权归 sijan2） |
+
+补丁解决的问题（引自上游 Release 说明）：
+
+1. **Compat Spawn（frida-core）**：API 35+ 默认关闭 zygote / system_server 注入，改用 `am` / `monkey` 拉起目标 App，避免注入系统进程导致整机卡死或重启；要恢复旧行为可设 `FRIDA_ANDROID_ZYGOTE_INJECTION=1`。
+2. **Java Bridge Fix（frida-tools）**：修正 API 36 的 ART 类 / 方法偏移，解决 `Java.perform()` 触发 `ToReflectedMethod` SIGSEGV。
+
+### 校验你手上的二进制
+
+```bash
+# 上游 release 资产（.xz 压缩包）
+sha256sum frida-server-17.5.2-android16-arm64.xz
+# bb9d13c16132068cae58946dded615fb41132e82851041adcf6b9a439fe5c909
+
+# 解压后的裸二进制（模块目录里的 frida-server）
+sha256sum frida-server
+# 4935431b8df061e43941f41913a60df009688ebdd59bd9defe29d7c5120ad4b8  (52,035,728 字节)
+```
+
+设备端直接读实际值（版本号是二进制自己 `--version` 报的，不是写死的）：
+
+```bash
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh info'
+# OK;fv=17.5.2;fb=android16;arch=arm64;flavor=sijan2 补丁版;author=sijan2;size=52035728;sha=4935431b8df061e4;repo=...;release=...;up=...;lic=...
+```
+
+WebUI 的「**关于 frida**」卡片显示同一份信息（版本 / 来源 / 上游 / 许可 / 二进制大小与 sha256 前 16 位），点仓库或发布页可直接跳系统浏览器。
+
+> 版本与链接集中在 [`ksu_module/frida_info.sh`](ksu_module/frida_info.sh) 一个文件里。以后换 frida 版本，只改这里，模块说明、`action.sh`、WebUI 会同步跟着变，不会出现「页面写着旧版本」的情况。
+
 ## PC 端环境（版本必须对上）
 
 设备端是 **frida-server 17.5.2**，PC 端 `frida` 版本必须与它**完全一致**；`frida-tools` 只是 CLI 外壳，但装新版会顺带把 `frida` 升上去，所以两个都要锁版本：
@@ -38,6 +79,7 @@ python -m pip install frida==17.5.2 frida-tools==14.5.2
 ├── requirements.txt             # ★ PC 端固定版本依赖（frida 17.5.2 + frida-tools 14.5.2）
 ├── ksu_module/                  # 模块源文件
 │   ├── module.prop              # 模块信息（由 sync_prop.sh 按配置重写）
+│   ├── frida_info.sh            # ★ frida 版本 / 来源 / 校验值（唯一事实来源，署名）
 │   ├── service.sh               # 开机自启（播种 config.sh → 改名副本 → 启动）
 │   ├── config.default.sh        # 出厂默认配置（升级会覆盖，勿存个人配置）
 │   ├── config.sh                # 个人配置（不在 zip 内，升级不丢失；首次启动生成）
@@ -116,7 +158,8 @@ python frida_scripts/run_frida.py <脚本.js> [时长秒] [端口]
 
 装好后在 SukiSU / KernelSU 模块列表里，本模块卡片上会多一个「**打开**」按钮（WebUI），点进去可以：
 
-- 看到当前**进程名 / 端口 / 运行状态（含已运行时长）/ 开机自启 / 模块版本**
+- 看到当前**进程名 / 端口 / 运行状态（含已运行时长）/ 开机自启 / 模块版本 / frida 版本**
+- 「**关于 frida**」卡片：版本、补丁作者仓库、构建发布页、上游项目、许可、二进制 sha256，可点击直接跳浏览器（尊重开源出处）
 - 直接填**端口**和**进程名**，点「应用并重启」立即生效（后台执行 + 实时进度，**不会卡住界面**）
 - 「**仅重启**」按当前配置重启，不改配置；「**查看日志**」直接看最后几行启动日志
 - 一键「随机端口 / 随机进程名」，改完自动写回模块列表说明
@@ -147,9 +190,10 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 s
 安装后，SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会自动显示：
 
 ```
-进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 修改: 打开本模块 WebUI
+frida 17.5.2-android16 (sijan2 补丁版) | 进程: sysmon | 端口: 127.0.0.1:39527 | PC: adb forward tcp:39527 tcp:39527 | 修改: WebUI
 ```
 
+- 开头就是 **frida 版本 + 补丁来源**，一眼能对上「这台机器上跑的是哪个版本的 frida、谁打的补丁」
 - 开机时 `service.sh`、每次改配置时 `set_config.sh` 都会调用 `sync_prop.sh` 自动刷新
 - 改完重进模块页或下拉刷新即可看到最新值；管理器若缓存旧值，杀掉管理器重开
 - 模块页的「执行 / 操作」按钮会弹出当前进程名、pid、端口与 PC 连接命令（`action.sh`）
@@ -187,6 +231,8 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh off'
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh on'
 # 只看运行状态（key=value，适合脚本解析）
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh status'
+# 看内置 frida 的版本 / 来源 / 校验值（一行 key=value）
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh info'
 # 手动按当前配置启动 / 重启
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh restart'
 # 查看运行日志
@@ -211,7 +257,8 @@ adb shell su -c 'cat /data/local/tmp/frida_patched.log'
 推论：**WebUI 里执行的命令必须只输出一行，且必须很快**。所以脚本额外提供了机器接口：
 
 ```bash
-set_config.sh status1            # OK;bin=sysmon;port=39527;pid=1234;listen=1;auto=1;coll=0;...
+set_config.sh status1            # OK;bin=sysmon;port=39527;pid=1234;listen=1;auto=1;coll=0;...;fv=17.5.2
+set_config.sh info               # frida 版本/来源/校验：OK;fv=17.5.2;fb=android16;...;repo=...;release=...
 set_config.sh apply <端口> <名字>  # 校验后立即返回 OK;rc=0，真正重启丢到后台
 set_config.sh job                # 读后台任务进度：RUN;msg=... / DONE;rc=0;... / FAIL;...
 ```

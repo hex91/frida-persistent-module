@@ -3,11 +3,17 @@
 # 只读：显示当前状态与常用命令，不做任何修改（防止误触）
 
 MODDIR=${0%/*}
+# frida 版本 / 来源（唯一事实来源：frida_info.sh）
+[ -f "$MODDIR/frida_info.sh" ] && . "$MODDIR/frida_info.sh"
+[ -z "$FRIDA_VERSION" ] && FRIDA_VERSION="17.5.2"
+[ -z "$FRIDA_BUILD" ]   && FRIDA_BUILD="android16"
+[ -z "$FRIDA_FLAVOR" ]  && FRIDA_FLAVOR="sijan2 补丁版"
+[ -z "$FRIDA_REPO" ]    && FRIDA_REPO="https://github.com/sijan2/frida"
 [ -f "$MODDIR/config.sh" ] && . "$MODDIR/config.sh"
 [ -z "$PORT" ]        && PORT=27042
 [ -z "$BIN_NAME" ]    && BIN_NAME=frida-server
 [ -z "$MOD_NAME" ]    && MOD_NAME="System Monitor"
-[ -z "$MOD_VERSION" ] && MOD_VERSION="1.6.0"
+[ -z "$MOD_VERSION" ] && MOD_VERSION="1.7.0"
 
 PID=""
 # 按 /proc/<pid>/exe 指向的路径找本模块的进程
@@ -47,6 +53,8 @@ else
 fi
 
 echo "模块    : $MOD_NAME  $MOD_VERSION"
+echo "frida   : $FRIDA_VERSION-$FRIDA_BUILD ($FRIDA_FLAVOR)"
+echo "来源    : $FRIDA_REPO"
 echo "进程名  : $BIN_NAME  (pid: ${PID:-未运行})$UPTIME_TXT"
 echo "端口    : 127.0.0.1:$PORT  [$LISTEN_TXT]"
 echo "开机自启: $AUTO_TXT"

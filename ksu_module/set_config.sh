@@ -6,7 +6,7 @@
 #
 #   su -c 'sh .../set_config.sh 39527 sysmon'          改端口 + 进程名（立即生效）
 #   su -c 'sh .../set_config.sh name "System Monitor"'  改模块列表显示名
-#   su -c 'sh .../set_config.sh version "1.6.0" 10600'  改模块列表显示版本（第二个参数可省）
+#   su -c 'sh .../set_config.sh version "1.7.0" 10700'  改模块列表显示版本（第二个参数可省）
 #   su -c 'sh .../set_config.sh restart'                按当前配置重启 frida-server
 #   su -c 'sh .../set_config.sh status'                 只看运行状态（多行，给人看）
 #   su -c 'sh .../set_config.sh off'                    关闭开机自启（保留模块）
@@ -14,6 +14,7 @@
 #
 # 供 WebUI 调用的机器接口（输出恒为一行 key=value，见 README）：
 #   .../set_config.sh status1                           当前状态，一行
+#   .../set_config.sh info                              frida 版本/来源/校验值，一行
 #   .../set_config.sh apply <端口> <进程名>              异步应用（立即返回，结果写 job 文件）
 #   .../set_config.sh job                               读取 apply 的进度/结果（一行）
 #   .../set_config.sh on | off                          自启开关，末行为结果
@@ -24,6 +25,17 @@
 #   所以 WebUI 侧的命令必须：① 单行输出 ② 足够快；耗时操作丢到后台任务再轮询。
 
 MODDIR=${0%/*}
+# frida 版本 / 来源 / 校验值（唯一事实来源，见 frida_info.sh 里的署名说明）
+[ -f "$MODDIR/frida_info.sh" ] && . "$MODDIR/frida_info.sh"
+[ -z "$FRIDA_VERSION" ] && FRIDA_VERSION="17.5.2"
+[ -z "$FRIDA_BUILD" ] && FRIDA_BUILD="android16"
+[ -z "$FRIDA_FLAVOR" ] && FRIDA_FLAVOR="sijan2 补丁版"
+[ -z "$FRIDA_AUTHOR" ] && FRIDA_AUTHOR="sijan2"
+[ -z "$FRIDA_REPO" ] && FRIDA_REPO="https://github.com/sijan2/frida"
+[ -z "$FRIDA_RELEASE" ] && FRIDA_RELEASE="https://github.com/sijan2/frida/releases/tag/v17.5.2-android16"
+[ -z "$FRIDA_UPSTREAM" ] && FRIDA_UPSTREAM="https://github.com/frida/frida"
+[ -z "$FRIDA_LICENSE" ] && FRIDA_LICENSE="wxWindows Library Licence"
+
 CONFIG="$MODDIR/config.sh"
 PERSIST=/data/adb/frida_module.conf
 LOG=/data/local/tmp/frida_patched.log
@@ -46,8 +58,8 @@ fi
 [ -z "$PORT" ]             && PORT=27042
 [ -z "$BIN_NAME" ]         && BIN_NAME=frida-server
 [ -z "$MOD_NAME" ]         && MOD_NAME="System Monitor"
-[ -z "$MOD_VERSION" ]      && MOD_VERSION="1.6.0"
-[ -z "$MOD_VERSION_CODE" ] && MOD_VERSION_CODE=10600
+[ -z "$MOD_VERSION" ]      && MOD_VERSION="1.7.0"
+[ -z "$MOD_VERSION_CODE" ] && MOD_VERSION_CODE=10700
 
 # ---------- 工具函数 ----------
 # 写后台任务状态（永远只保留一行，WebUI 用 cat 读最后一行）
@@ -102,6 +114,27 @@ is_listen() {
 # 进程名是否与系统程序重名（重名会让 ps 里出现两个同名进程，反而更可疑）
 name_collides() {
   [ -x "/system/bin/$1" ] || [ -x "/system/xbin/$1" ]
+}
+
+# 当前正在用的二进制路径（优先改名副本，其次母本）
+frida_bin_path() {
+  if [ -n "$BIN_NAME" ] && [ -x "$MODDIR/$BIN_NAME" ] && [ "$BIN_NAME" != "frida-server" ]; then
+    printf '%s' "$MODDIR/$BIN_NAME"
+  else
+    printf '%s' "$MODDIR/frida-server"
+  fi
+}
+
+# 二进制自己报告的版本（frida-server --version 立即退出，实测 <10ms）
+# 读不到时退回 frida_info.sh 里登记的版本，保证页面不会显示空
+frida_bin_version() {
+  _fbp=$(frida_bin_path)
+  _fbv=""
+  [ -x "$_fbp" ] && _fbv=$("$_fbp" --version 2>/dev/null | head -1 | tr -d '\r\n')
+  case "$_fbv" in
+    ''|*[!0-9.]*) _fbv="$FRIDA_VERSION" ;;
+  esac
+  printf '%s' "$_fbv"
 }
 
 # 杀掉本模块拉起的所有 server 实例
@@ -183,6 +216,14 @@ show() {
   echo "=== 模块列表显示（module.prop）==="
   grep -E '^(id|name|version|versionCode|description)=' "$MODDIR/module.prop" 2>/dev/null
   echo ""
+  echo "=== frida 版本 / 来源 ==="
+  echo "版本    : $(frida_bin_version) ($FRIDA_BUILD / $FRIDA_ARCH) — $FRIDA_FLAVOR"
+  echo "二进制  : $(frida_bin_path)"
+  echo "来源    : $FRIDA_REPO"
+  echo "发布页  : $FRIDA_RELEASE"
+  echo "上游    : $FRIDA_UPSTREAM"
+  echo "许可    : $FRIDA_LICENSE（补丁部分版权归 $FRIDA_AUTHOR）"
+  echo ""
   echo "=== 运行中的实例 ==="
   for p in $(ls -l /proc/[0-9]*/exe 2>/dev/null | awk -v pre="$MODDIR/" '
       {
@@ -200,14 +241,41 @@ show() {
   echo "改端口/进程名: su -c 'sh $MODDIR/set_config.sh <端口> <进程名>'"
   echo "              例: su -c 'sh $MODDIR/set_config.sh 39527 sysmon'"
   echo "改显示名    : su -c 'sh $MODDIR/set_config.sh name \"System Monitor\"'"
-  echo "改显示版本  : su -c 'sh $MODDIR/set_config.sh version \"1.5.0\" 10500'"
+  echo "改显示版本  : su -c 'sh $MODDIR/set_config.sh version \"1.6.0\" 10600'"
   echo "仅重启      : su -c 'sh $MODDIR/set_config.sh restart'"
   echo "开机自启    : su -c 'sh $MODDIR/set_config.sh on|off'"
+  echo "版本/来源   : su -c 'sh $MODDIR/set_config.sh info'"
+  echo ""
+  echo "frida 版权归 frida 项目（Ole André V. Ravnås）与补丁作者 $FRIDA_AUTHOR，"
+  echo "本模块仅做持久化封装：$FRIDA_REPO"
   echo ""
   echo "提示: 改完若模块列表没刷新，下拉刷新或退出重进管理器。"
 }
 
-# 一行状态（WebUI 用）：OK;bin=..;port=..;pid=..;listen=..;auto=..;...
+# 一行「frida 版本 + 来源」（WebUI 关于卡片用）
+# OK;fv=17.5.2;fb=android16;arch=arm64;flavor=..;author=..;size=..;sha=..;repo=..;release=..;up=..;lic=..
+info_line() {
+  _ib=$(frida_bin_path)
+  _cf="$MODDIR/.frida_sha"     # sha256 缓存：52MB 读一遍 0.5s，二进制没变就不再算
+  _isz=""
+  _isha=""
+  if [ -f "$_ib" ]; then
+    _isz=$(stat -c %s "$_ib" 2>/dev/null)
+    _imt=$(stat -c %Y "$_ib" 2>/dev/null)
+    _cached=""
+    [ -f "$_cf" ] && _cached=$(cat "$_cf" 2>/dev/null)
+    case "$_cached" in
+      "$_isz:$_imt:"*) _isha=${_cached##*:} ;;
+      *)
+        _isha=$(sha256sum "$_ib" 2>/dev/null | cut -c1-16)
+        [ -n "$_isha" ] && printf '%s\n' "$_isz:$_imt:$_isha" > "$_cf" 2>/dev/null
+        ;;
+    esac
+  fi
+  echo "OK;fv=$(one "$(frida_bin_version)");fb=$(one "$FRIDA_BUILD");arch=$(one "$FRIDA_ARCH");flavor=$(one "$FRIDA_FLAVOR");author=$(one "$FRIDA_AUTHOR");file=$(one "${_ib##*/}");size=$(one "${_isz:-0}");sha=$(one "$_isha");repo=$(one "$FRIDA_REPO");release=$(one "$FRIDA_RELEASE");up=$(one "$FRIDA_UPSTREAM");lic=$(one "$FRIDA_LICENSE")"
+}
+
+# 一行状态（WebUI 用）：OK;bin=..;port=..;pid=..;listen=..;auto=..;...;fv=..
 status_line() {
   PID=$(server_pid)
   LISTEN=0
@@ -225,7 +293,7 @@ status_line() {
       [ "$UP" -lt 0 ] && UP=0
     fi
   fi
-  echo "OK;bin=$(one "$BIN_NAME");port=$(one "$PORT");pid=${PID:-0};listen=$LISTEN;auto=$AUTO;coll=$COLL;name=$(one "$MOD_NAME");ver=$(one "$MOD_VERSION");code=$(one "$MOD_VERSION_CODE");up=$UP"
+  echo "OK;bin=$(one "$BIN_NAME");port=$(one "$PORT");pid=${PID:-0};listen=$LISTEN;auto=$AUTO;coll=$COLL;name=$(one "$MOD_NAME");ver=$(one "$MOD_VERSION");code=$(one "$MOD_VERSION_CODE");up=$UP;fv=$(one "$(frida_bin_version)")"
 }
 
 # 多行状态（给人看 / 脚本 grep）
@@ -309,6 +377,11 @@ case "$1" in
 
   status1)
     status_line
+    exit 0
+    ;;
+
+  info)
+    info_line
     exit 0
     ;;
 
