@@ -20,8 +20,8 @@ CONFIG="$MODDIR/config.sh"
 [ -z "$PORT" ]            && PORT=27042
 [ -z "$BIN_NAME" ]        && BIN_NAME=frida-server
 [ -z "$MOD_NAME" ]        && MOD_NAME="System Monitor"
-[ -z "$MOD_VERSION" ]     && MOD_VERSION="1.5.0"
-[ -z "$MOD_VERSION_CODE" ] && MOD_VERSION_CODE=10500
+[ -z "$MOD_VERSION" ]     && MOD_VERSION="1.6.0"
+[ -z "$MOD_VERSION_CODE" ] && MOD_VERSION_CODE=10600
 
 DESC="进程: $BIN_NAME | 端口: 127.0.0.1:$PORT | PC: adb forward tcp:$PORT tcp:$PORT | 修改: 打开本模块 WebUI"
 

@@ -13,8 +13,8 @@ MODDIR=${0%/*}
 PORT=27042
 BIN_NAME=frida-server
 MOD_NAME="System Monitor"
-MOD_VERSION="1.5.0"
-MOD_VERSION_CODE=10500
+MOD_VERSION="1.6.0"
+MOD_VERSION_CODE=10600
 
 # 用户配置不随模块升级丢失：config.sh 不在 zip 内，缺失时依次从
 #   1) 持久化备份 /data/adb/frida_module.conf（模块目录被重装清空也能恢复）
@@ -35,17 +35,21 @@ fi
 [ -f "$MODDIR/config.sh" ] && [ ! -f "$PERSIST" ] && { cp "$MODDIR/config.sh" "$PERSIST" 2>/dev/null; chmod 600 "$PERSIST" 2>/dev/null; }
 
 # 开机先把当前进程名/端口写进 module.prop，模块列表里直接可见
-[ -x "$MODDIR/sync_prop.sh" ] && sh "$MODDIR/sync_prop.sh" >/dev/null 2>&1
+[ -f "$MODDIR/sync_prop.sh" ] && sh "$MODDIR/sync_prop.sh" >/dev/null 2>&1
 
 (
-  # wait for boot complete
-  until [ "$(getprop sys.boot_completed)" = "1" ]; do
-    sleep 5
-  done
-  sleep 10
+  # FRIDA_START_NOW=1 表示"现在就要用"（WebUI/命令行 手动重启），跳过开机等待，秒起
+  if [ "$FRIDA_START_NOW" != "1" ]; then
+    # wait for boot complete
+    until [ "$(getprop sys.boot_completed)" = "1" ]; do
+      sleep 5
+    done
+    sleep 10
+  fi
 
   # 自启开关：存在 noautostart 则跳过启动（不影响模块启用状态）
-  [ -f "$MODDIR/noautostart" ] && exit 0
+  # 手动重启（FRIDA_START_NOW=1）不受自启开关影响，否则关了自启就没法手动拉起了
+  [ "$FRIDA_START_NOW" != "1" ] && [ -f "$MODDIR/noautostart" ] && exit 0
 
   MOTHER="$MODDIR/frida-server"
   LOG=/data/local/tmp/frida_patched.log
@@ -70,8 +74,17 @@ fi
 
   chmod 755 "$MOTHER" 2>/dev/null
 
-  # avoid double-start（按配置的进程名查）
-  pidof "$BIN_NAME" >/dev/null 2>&1 && exit 0
+  # avoid double-start
+  # 注意：不能用 pidof 直接判定 —— 进程名可能和系统守护进程重名（netd/logd/vold…），
+  # pidof 会命中系统那个，导致误判"已在运行"而永远不启动。
+  # 这里先用 pidof 拿到同名候选（很快），再按 cmdline 里的完整路径确认是不是自己。
+  TARGET_PATH="$MODDIR/$BIN_NAME"
+  for cpid in $(pidof "$BIN_NAME" 2>/dev/null); do
+    ccmd=$(cat "/proc/$cpid/cmdline" 2>/dev/null | tr '\0' ' ')
+    case "$ccmd" in
+      "$TARGET_PATH"|"$TARGET_PATH "*) exit 0 ;;
+    esac
+  done
 
   setsid "$MODDIR/$BIN_NAME" -l "127.0.0.1:$PORT" > "$LOG" 2>&1 < /dev/null &
 ) &

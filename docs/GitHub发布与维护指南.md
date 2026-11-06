@@ -84,10 +84,10 @@ gh repo rename new-name --repo hex91/old-name           # 改名
 成品 zip 位于 `dist/frida_patched_server-17.5.2-android16.zip`。
 
 ```bash
-gh release create v1.5.0 \
+gh release create v1.6.0 \
   "dist/frida_patched_server-17.5.2-android16.zip" \
   --repo hex91/frida-persistent-module \
-  --title "v1.5.0 — 一句话说明本次变化" \
+  --title "v1.6.0 — 一句话说明本次变化" \
   --notes "变更点清单；安装方式：SukiSU/KernelSU 管理器选 zip 安装，重启生效。"
 ```
 

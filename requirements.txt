@@ -1,0 +1,8 @@
+# PC 端依赖（版本必须与设备端 frida-server 17.5.2 严格一致）
+#
+#   python -m pip install -r requirements.txt
+#
+# 注意：不要单独 `pip install -U frida-tools`，14.11+ 会把 frida 升到 17.26，
+# 连 17.5.2 的 server 会直接报 ServerNotRunningError。
+frida==17.5.2
+frida-tools==14.5.2

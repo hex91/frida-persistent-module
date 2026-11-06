@@ -1,6 +1,6 @@
 id=frida_patched_server
 name=System Monitor
-version=1.5.0
-versionCode=10500
+version=1.6.0
+versionCode=10600
 author=hex91
 description=进程: frida-server | 端口: 127.0.0.1:27042 | PC: adb forward tcp:27042 tcp:27042 | 修改: 打开本模块 WebUI

@@ -9,9 +9,33 @@ KernelSU / Magisk / SukiSU 通用模块：开机自启 **sijan2 补丁版 frida-
 >
 > 背景：frida 官方 17.2~17.5.x 在 Android 14/15 上存在 ART 兼容 bug（注入即崩 / 拖垮 system_server），本模块内置 [sijan2/frida](https://github.com/sijan2/frida) v17.5.2-android16 补丁版（禁用 zygote/system_server 注入 + 修复 ART 偏移），详见 [兼容性排查报告](docs/frida兼容性问题排查报告_Pixel6_Android15.md)。
 
+## PC 端环境（版本必须对上）
+
+设备端是 **frida-server 17.5.2**，PC 端 `frida` 版本必须与它**完全一致**；`frida-tools` 只是 CLI 外壳，但装新版会顺带把 `frida` 升上去，所以两个都要锁版本：
+
+```bash
+python -m pip install -r requirements.txt
+# 等价于
+python -m pip install frida==17.5.2 frida-tools==14.5.2
+```
+
+| 包 | 版本 | 说明 |
+|---|---|---|
+| `frida` | **17.5.2** | 与设备端 server 严格一致，不一致会报 `ServerNotRunningError` / 连上即断 |
+| `frida-tools` | **14.5.2** | 最后一个只要求 `frida>=17.5.0` 的版本；14.11+ 会拉 `frida 17.26` 把环境搞坏 |
+
+> 已验证组合：Python 3.11+ / `frida 17.5.2` / `frida-tools 14.5.2` / Pixel 6 + Android 15。
+>
+> 如果已经装过头了，回滚：
+> ```bash
+> python -m pip install --force-reinstall frida==17.5.2 frida-tools==14.5.2
+> python -m pip list | grep frida   # 两行都应是上面的版本
+> ```
+
 ## 仓库内容
 
 ```
+├── requirements.txt             # ★ PC 端固定版本依赖（frida 17.5.2 + frida-tools 14.5.2）
 ├── ksu_module/                  # 模块源文件
 │   ├── module.prop              # 模块信息（由 sync_prop.sh 按配置重写）
 │   ├── service.sh               # 开机自启（播种 config.sh → 改名副本 → 启动）
@@ -92,11 +116,18 @@ python frida_scripts/run_frida.py <脚本.js> [时长秒] [端口]
 
 装好后在 SukiSU / KernelSU 模块列表里，本模块卡片上会多一个「**打开**」按钮（WebUI），点进去可以：
 
-- 看到当前**进程名 / 端口 / 运行状态 / 已运行时长 / 开机自启状态**
-- 直接填**端口**和**进程名**，点「应用并重启」立即生效
+- 看到当前**进程名 / 端口 / 运行状态（含已运行时长）/ 开机自启 / 模块版本**
+- 直接填**端口**和**进程名**，点「应用并重启」立即生效（后台执行 + 实时进度，**不会卡住界面**）
+- 「**仅重启**」按当前配置重启，不改配置；「**查看日志**」直接看最后几行启动日志
 - 一键「随机端口 / 随机进程名」，改完自动写回模块列表说明
-- 开关**开机自启**（关闭后重启手机不自动运行，模块仍保留）
+- 开关**开机自启**（关闭后重启手机不自动运行，模块仍保留；开关状态会持久保存）
+- 进程名和系统自带程序重名时会给出黄色提示（`ps` 里会出现两个同名进程，反而更显眼）
 - 复制 PC 端 `adb forward` + `frida` 连接命令
+
+> 关于「卡死 / 状态空白 / 点应用提示命令超时」：v1.6.0 已修复。原因是 SukiSU 的 WebUI 桥接
+> `ksu.exec(cmd)` 是**同步返回 stdout 的最后一行**（第二个参数是 options，不是回调），
+> 旧页面按「多行输出 + 回调」写，必然拿不到状态、回调不触发而 20 秒超时。
+> 现在脚本改为**单行 `key=value` 协议**，耗时操作丢后台任务再轮询，详见下方「WebUI 实现说明」。
 
 ### 方式二：命令行
 
@@ -133,7 +164,7 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 s
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
 
 # 改显示版本（第一个是版本字符串，第二个是纯数字 versionCode，可省略）
-adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.5.0" 10500'
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.6.0" 10600'
 ```
 
 > `description` 里的端口/进程名会随配置自动同步；`id` 必须保持 `frida_patched_server` 不变，否则管理器会当成另一个模块。
@@ -163,6 +194,39 @@ adb shell su -c 'cat /data/local/tmp/frida_patched.log'
 ```
 
 > 关闭自启用的是模块目录下的 `noautostart` 文件；不要用 `disable`，那是管理器的「模块已禁用」标记，会让整个模块停用。
+
+## WebUI 实现说明（维护者看）
+
+### 1. `ksu.exec` 的真实契约
+
+在 Pixel 6 + SukiSU 4.1.0 上实测（模块 WebUI 就是跑在这个桥接上）：
+
+| 行为 | 实测结果 |
+|---|---|
+| 返回值 | **stdout 的最后一行**（`echo a; echo b` → 只拿到 `b`） |
+| 第二参数 | 是 options，**不是回调**；传回调会返回 `undefined` 且永远不回调 |
+| stderr / 退出码 | 拿不到（`echo err >&2; exit 3` → 返回 `out`） |
+| 阻塞 | 同步执行，执行期间 WebView 主线程卡住（`sleep 3` = 卡 3 秒） |
+
+推论：**WebUI 里执行的命令必须只输出一行，且必须很快**。所以脚本额外提供了机器接口：
+
+```bash
+set_config.sh status1            # OK;bin=sysmon;port=39527;pid=1234;listen=1;auto=1;coll=0;...
+set_config.sh apply <端口> <名字>  # 校验后立即返回 OK;rc=0，真正重启丢到后台
+set_config.sh job                # 读后台任务进度：RUN;msg=... / DONE;rc=0;... / FAIL;...
+```
+
+页面拿 `status1` 的结果直接 `split(";")` 解析；`apply` 之后每 0.5s 轮询 `job`，把 `RUN;msg=` 显示成进度条文字，`DONE`/`FAIL` 收尾。整个过程单次命令耗时 50~200ms，界面不会卡。
+
+### 2. 进程名可能和系统守护进程重名
+
+伪装成 `netd` / `logd` 这类真实守护进程时，`pidof netd` 会先返回**系统那个**，于是 `service.sh` 误判「已在运行」直接退出，`frida-server` 永远起不来（状态显示「进程在但未监听」）。
+
+现在所有判断都改成**按 `/proc/<pid>/exe` 指向的完整路径**确认是不是自己，`pidof` 只用来缩小候选范围。WebUI 的随机进程名也换成了 `sysmon` / `statd` / `netmon` 这类不会撞车的名字。
+
+### 3. 不要遍历 `/proc/*/cmdline`
+
+700+ 进程逐个 `cat` 要 **15 秒**（每个都是一次 fork+exec）。改成一条 `ls -l /proc/*/exe` 加 `awk` 过滤，约 100ms —— 这也是早期「点应用要等十几秒」的元凶之一。
 
 ## 声明
 

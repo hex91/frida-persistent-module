@@ -72,7 +72,7 @@ off = 创建 noautostart 文件：重启后不自动启动，但模块仍然启�
     su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
 
     # 改显示版本（第一个是版本字符串，第二个是纯数字版本代码，可省略）
-    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.5.0" 10500'
+    su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.6.0" 10600'
 
 改完在管理器里「下拉刷新」或退出重进，即可看到新的名字和版本。
 

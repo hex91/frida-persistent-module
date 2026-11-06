@@ -121,7 +121,7 @@ SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会显�
 adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh name "System Monitor"'
 
 # 改显示版本（第一参数是版本字符串，第二参数是纯数字 versionCode，可省略）
-adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.5.0" 10500'
+adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version "1.6.0" 10600'
 ```
 
 > `description` 里的端口/进程名随配置自动同步；`id` 必须保持 `frida_patched_server`，否则管理器会当成另一个模块。

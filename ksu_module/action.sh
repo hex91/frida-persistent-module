@@ -7,9 +7,19 @@ MODDIR=${0%/*}
 [ -z "$PORT" ]        && PORT=27042
 [ -z "$BIN_NAME" ]    && BIN_NAME=frida-server
 [ -z "$MOD_NAME" ]    && MOD_NAME="System Monitor"
-[ -z "$MOD_VERSION" ] && MOD_VERSION="1.5.0"
+[ -z "$MOD_VERSION" ] && MOD_VERSION="1.6.0"
 
-PID=$(pidof "$BIN_NAME" 2>/dev/null)
+PID=""
+# 按 /proc/<pid>/exe 指向的路径找本模块的进程
+# （不能用 pidof：进程名可能与系统守护进程重名；也不要逐个 cat cmdline：700+ 进程要十几秒）
+PID=$(ls -l /proc/[0-9]*/exe 2>/dev/null | awk -v tgt="$MODDIR/$BIN_NAME" '
+  {
+    if ($0 !~ / -> /) next
+    t = $0; sub(/^.* -> /, "", t)
+    if (t != tgt) next
+    p = $0; sub(/^.*\/proc\//, "", p); sub(/\/exe.*$/, "", p)
+    if (p ~ /^[0-9]+$/) { print p; exit }
+  }')
 
 # 运行时长（开机后多久拉起的）
 UPTIME_TXT=""

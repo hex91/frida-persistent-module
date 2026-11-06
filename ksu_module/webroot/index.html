@@ -47,7 +47,7 @@
   button:active{transform:scale(.985)}
   button:disabled{opacity:.55}
   .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
-  .chip{padding:7px 12px; font-size:13px; border-radius:999px; background:var(--card2); border:1px solid var(--line); color:var(--fg)}
+  .chip{padding:7px 12px; font-size:13px; border-radius:999px; background:var(--card2); border:1px solid var(--line); color:var(--fg); flex:0 0 auto; min-width:0}
   pre{
     margin:0; padding:11px; background:var(--card2); border:1px solid var(--line); border-radius:10px;
     font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-all; max-height:190px; overflow:auto;
@@ -64,6 +64,9 @@
   .switch input:checked + .slider:before{transform:translateX(22px); background:#fff}
   .out{margin-top:10px}
   .err{color:var(--err)}
+  .warnbox{background:rgba(240,180,41,.12); border:1px solid rgba(240,180,41,.45); color:var(--warn);
+    border-radius:10px; padding:9px 11px; font-size:12.5px; margin-top:10px; display:none}
+  .warnbox.show{display:block}
 </style>
 </head>
 <body>
@@ -77,6 +80,7 @@
   <div class="row"><span class="k">运行状态</span><span id="s-run" class="badge">-</span></div>
   <div class="row"><span class="k">开机自启</span><span id="s-auto" class="badge">-</span></div>
   <div class="row"><span class="k">模块版本</span><span class="v" id="s-ver">-</span></div>
+  <div class="warnbox" id="warn-coll"></div>
 </div>
 
 <div class="card">
@@ -93,7 +97,11 @@
   </div>
   <div class="btns">
     <button class="primary" id="b-apply">应用并重启</button>
+    <button id="b-restart">仅重启</button>
+  </div>
+  <div class="btns">
     <button id="b-refresh">刷新状态</button>
+    <button id="b-log">查看日志</button>
   </div>
   <div class="out" id="out-apply" hidden><pre id="pre-apply"></pre></div>
 </div>
@@ -121,9 +129,9 @@
     <label>模块显示名</label>
     <input type="text" id="in-name" placeholder="System Monitor">
     <label>显示版本</label>
-    <input type="text" id="in-ver" placeholder="1.5.0">
+    <input type="text" id="in-ver" placeholder="1.6.0">
     <label>版本代码（纯数字）</label>
-    <input type="number" id="in-code" placeholder="10500">
+    <input type="number" id="in-code" placeholder="10600">
     <div class="btns"><button id="b-save-meta">保存显示信息</button></div>
     <div class="out" id="out-meta" hidden><pre id="pre-meta"></pre></div>
   </details>
@@ -133,51 +141,87 @@
 (function () {
   "use strict";
 
-  // 模块目录：优先 /data/adb/modules，升级中可能在 modules_update
   var MOD = "/data/adb/modules/frida_patched_server";
+  var SCRIPT = MOD + "/set_config.sh";
+  var JOBFILE = "/data/local/tmp/frida_webui_job.status";
+  var LOGFILE = "/data/local/tmp/frida_patched.log";
 
   function $(id) { return document.getElementById(id); }
 
-  // ksu.exec 在不同管理器版本里有多种签名，这里统一成 Promise
+  /*
+   * 执行一条 root 命令。
+   *
+   * SukiSU / KernelSU 4.x 的 ksu.exec(cmd) 实测行为（Pixel 6 + SukiSU 4.1.0）：
+   *   - 同步阻塞执行，**返回 stdout 的最后一行**（多行输出只留最后一行）
+   *   - 第二个参数是 options，不是回调；传回调会返回 undefined 且永远不回调
+   *   - 拿不到 stderr，也拿不到 exit code
+   * 所以：所有脚本命令都只输出一行 key=value，结果里自带 rc。
+   * 这里仍兼容其它实现（返回对象 / Promise / JSON 字符串）。
+   */
   function exec(cmd) {
-    return new Promise(function (resolve) {
-      var settled = false;
-      function done(v) { if (!settled) { settled = true; resolve(v); } }
-      function norm(errno, stdout, stderr) {
-        return { errno: errno | 0, stdout: String(stdout == null ? "" : stdout), stderr: String(stderr == null ? "" : stderr) };
-      }
-      if (typeof ksu === "undefined" || !ksu || typeof ksu.exec !== "function") {
-        done({ errno: -99, stdout: "", stderr: "当前环境没有 ksu API，请从管理器打开此页面" });
+    return new Promise(function (resolve, reject) {
+      var k = (typeof ksu !== "undefined" && ksu) ? ksu : null;
+      if (!k || typeof k.exec !== "function") {
+        reject(new Error("当前环境没有 ksu.exec，请从管理器模块页打开本页面"));
         return;
       }
+      var ret;
       try {
-        var ret = ksu.exec(cmd, function (errno, stdout, stderr) { done(norm(errno, stdout, stderr)); });
-        if (ret && typeof ret === "object" && ("errno" in ret || "stdout" in ret)) {
-          done(norm(ret.errno, ret.stdout, ret.stderr));
-        } else if (typeof ret === "string") {
-          done({ errno: 0, stdout: ret, stderr: "" });
-        } else if (ret && typeof ret.then === "function") {
-          ret.then(function (o) {
-            done(typeof o === "string" ? { errno: 0, stdout: o, stderr: "" } : norm(o && o.errno, o && o.stdout, o && o.stderr));
-          }, function (e) { done({ errno: -1, stdout: "", stderr: String(e) }); });
-        }
-        setTimeout(function () { done({ errno: -2, stdout: "", stderr: "命令超时" }); }, 20000);
+        ret = k.exec(cmd);
       } catch (e) {
-        done({ errno: -1, stdout: "", stderr: String(e) });
+        reject(new Error("执行失败: " + e));
+        return;
       }
+      function pick(obj) {
+        if (obj && typeof obj === "object") {
+          if (typeof obj.stdout === "string") return obj.stdout;
+          if (typeof obj.out === "string") return obj.out;
+        }
+        return "";
+      }
+      if (ret && typeof ret.then === "function") {
+        ret.then(function (o) { resolve(pick(o) || String(o == null ? "" : o)); },
+                 function (e) { reject(new Error(String(e))); });
+        return;
+      }
+      if (ret && typeof ret === "object") { resolve(pick(ret)); return; }
+      if (typeof ret === "string") {
+        var s = ret;
+        // 某些实现返回 JSON 信封 {"errno":0,"stdout":"..."}
+        if (s.charAt(0) === "{") {
+          try {
+            var o = JSON.parse(s);
+            if (o && typeof o.stdout === "string") { resolve(o.stdout); return; }
+          } catch (e) {}
+        }
+        resolve(s);
+        return;
+      }
+      reject(new Error("ksu.exec 没有返回内容（该管理器版本可能不支持 WebUI 执行命令）"));
     });
   }
 
+  // 一行 key=value（用 ; 分隔）→ 对象
+  function parseKV(line) {
+    var o = {};
+    String(line == null ? "" : line).split(";").forEach(function (seg) {
+      var i = seg.indexOf("=");
+      if (i > 0) o[seg.slice(0, i).trim()] = seg.slice(i + 1).trim();
+    });
+    return o;
+  }
+
+  // 单引号安全转义，用于把用户输入拼进 shell 命令
+  function q(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
   function toast(msg) {
-    try { if (ksu && typeof ksu.toast === "function") { ksu.toast(msg); return; } } catch (e) {}
-    console.log(msg);
+    try { if (typeof ksu !== "undefined" && ksu && typeof ksu.toast === "function") { ksu.toast(msg); return; } } catch (e) {}
   }
 
   function show(boxId, preId, text, isErr) {
-    var box = $(boxId), pre = $(preId);
-    box.hidden = false;
-    pre.textContent = text || "(无输出)";
-    pre.className = isErr ? "err" : "";
+    $(boxId).hidden = false;
+    $(preId).textContent = text || "(无输出)";
+    $(preId).className = isErr ? "err" : "";
   }
 
   function setBadge(el, text, cls) {
@@ -191,39 +235,48 @@
     var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
     if (d > 0) return d + " 天 " + h + " 小时";
     if (h > 0) return h + " 小时 " + m + " 分";
-    return m + " 分钟";
+    if (m > 0) return m + " 分钟";
+    return sec + " 秒";
   }
 
-  var state = { bin: "", port: "", auto: true };
+  var state = { bin: "", port: "", auto: true, busy: false };
 
   function loadStatus() {
-    return exec("sh " + MOD + "/set_config.sh status").then(function (r) {
-      if (r.errno !== 0 && !r.stdout) {
-        setBadge($("s-run"), "未知", "warn");
-        return;
-      }
-      var map = {};
-      r.stdout.split("\n").forEach(function (line) {
-        var i = line.indexOf("=");
-        if (i > 0) map[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-      });
-
-      state.bin = map.BIN_NAME || "";
-      state.port = map.PORT || "";
-      state.auto = map.AUTOSTART === "1";
+    return exec("sh " + SCRIPT + " status1").then(function (line) {
+      var m = parseKV(line);
+      if (!m.bin) { setBadge($("s-run"), "读取失败", "warn"); return; }
+      state.bin = m.bin || "";
+      state.port = m.port || "";
+      state.auto = m.auto === "1";
 
       $("s-bin").textContent = state.bin || "-";
       $("s-port").textContent = state.port ? "127.0.0.1:" + state.port : "-";
-      $("s-ver").textContent = (map.MOD_VERSION || "-") + " (" + (map.MOD_VERSION_CODE || "-") + ")";
+      $("s-ver").textContent = (m.ver || "-") + " (" + (m.code || "-") + ")";
 
-      var running = map.LISTEN === "1";
-      var up = fmtUptime(map.UPTIME);
-      setBadge($("s-run"), running ? ("运行中" + (up ? " · " + up : "")) : (map.PID && map.PID !== "0" ? "进程在但未监听" : "未运行"), running ? "ok" : "off");
+      var running = m.listen === "1";
+      var up = fmtUptime(m.up);
+      if (running) {
+        setBadge($("s-run"), "运行中" + (up ? " · " + up : ""), "ok");
+      } else if (m.pid && m.pid !== "0") {
+        setBadge($("s-run"), "进程在但未监听", "warn");
+      } else {
+        setBadge($("s-run"), "未运行", "off");
+      }
       setBadge($("s-auto"), state.auto ? "已开启" : "已关闭", state.auto ? "ok" : "off");
+
+      var warn = $("warn-coll");
+      if (m.coll === "1") {
+        warn.textContent = "⚠ 进程名 " + state.bin + " 与系统自带程序重名，ps 里会出现两个同名进程。功能正常，但更容易被检测，建议换一个独有的名字。";
+        warn.className = "warnbox show";
+      } else {
+        warn.className = "warnbox";
+      }
 
       if (!$("in-port").value) $("in-port").value = state.port;
       if (!$("in-bin").value) $("in-bin").value = state.bin;
-      if (!$("in-name").value) $("in-name").value = map.MOD_NAME || "";
+      if (!$("in-name").value) $("in-name").value = m.name || "";
+      if (!$("in-ver").value) $("in-ver").value = m.ver || "";
+      if (!$("in-code").value) $("in-code").value = m.code || "";
 
       $("sw-auto").checked = state.auto;
 
@@ -232,54 +285,137 @@
     });
   }
 
-  function apply() {
-    var port = ($("in-port").value || "").trim();
-    var bin = ($("in-bin").value || "").trim();
+  function setBusy(on) {
+    state.busy = on;
+    ["b-apply", "b-restart", "b-refresh", "b-randport", "b-randbin", "b-sysmon", "b-save-meta"].forEach(function (id) {
+      $(id).disabled = on;
+    });
+    $("sw-auto").disabled = on;
+  }
 
+  // 轮询后台任务：apply 会把结果写进 JOBFILE，永远只有一行
+  function waitJob(onStep) {
+    var tries = 0;
+    return new Promise(function (resolve, reject) {
+      function tick() {
+        exec("cat " + JOBFILE).then(function (line) {
+          var m = parseKV(line);
+          var head = String(line || "").split(";")[0];
+          if (head === "DONE") { resolve(m); return; }
+          if (head === "FAIL") { reject(new Error(m.msg || "启动失败")); return; }
+          if (onStep && m.msg) onStep(m.msg);
+          if (++tries > 80) { reject(new Error("等待超时（40 秒），请查看日志")); return; }
+          setTimeout(tick, 500);
+        }, function (e) { reject(e); });
+      }
+      setTimeout(tick, 400);
+    });
+  }
+
+  function applyRun(port, bin, btn, btnText) {
     if (!/^\d+$/.test(port)) { show("out-apply", "pre-apply", "端口必须是纯数字", true); return; }
     var p = parseInt(port, 10);
     if (p < 1024 || p > 65535) { show("out-apply", "pre-apply", "端口需在 1024 - 65535 之间", true); return; }
     if (!/^[a-zA-Z0-9._-]{1,15}$/.test(bin)) { show("out-apply", "pre-apply", "进程名只能含字母/数字/._- ，且不超过 15 字符", true); return; }
 
-    var btn = $("b-apply");
-    btn.disabled = true;
+    setBusy(true);
     btn.textContent = "应用中…";
-    show("out-apply", "pre-apply", "正在应用：" + bin + " @ 127.0.0.1:" + port + " …");
+    show("out-apply", "pre-apply", "正在应用：" + bin + " @ 127.0.0.1:" + p + " …");
 
-    exec("sh " + MOD + "/set_config.sh " + p + " " + bin).then(function (r) {
-      var ok = r.errno === 0;
-      btn.disabled = false;
-      btn.textContent = "应用并重启";
-      show("out-apply", "pre-apply", (r.stdout || "") + (r.stderr ? "\n" + r.stderr : ""), !ok);
-      toast(ok ? "已生效" : "失败，请看输出");
-      loadStatus();
+    exec("sh " + SCRIPT + " apply " + p + " " + bin).then(function (line) {
+      var head = String(line || "").split(";")[0];
+      if (head === "ERR") {
+        var em = parseKV(line);
+        show("out-apply", "pre-apply", "失败: " + (em.msg || line), true);
+        toast("失败: " + (em.msg || ""));
+        setBusy(false);
+        btn.textContent = btnText;
+        return null;
+      }
+      return waitJob(function (msg) {
+        show("out-apply", "pre-apply", "⏳ " + msg + " …", false);
+      }).then(function (m) {
+        show("out-apply", "pre-apply",
+          "已生效\n进程: " + m.bin + " (pid " + m.pid + ")\n端口: 127.0.0.1:" + m.port + " 监听中\nPC  : adb forward tcp:" + m.port + " tcp:" + m.port, false);
+        toast("已生效");
+        setBusy(false);
+        btn.textContent = btnText;
+        $("in-port").value = m.port || p;
+        $("in-bin").value = m.bin || bin;
+        return loadStatus();
+      }, function (e) {
+        show("out-apply", "pre-apply", "失败: " + e.message + "\n点「查看日志」看原因", true);
+        toast("启动失败");
+        setBusy(false);
+        btn.textContent = btnText;
+        return loadStatus();
+      });
+    }, function (e) {
+      show("out-apply", "pre-apply", "执行失败: " + e.message, true);
+      setBusy(false);
+      btn.textContent = btnText;
     });
   }
 
-  // 随机工具
+  // 随机工具：不要用 netd/logd/vold 这类真实守护进程名，重名反而更显眼
   function randPort() { return 20000 + Math.floor(Math.random() * 30000); }
-  var NAMES = ["sysmon", "logd", "netd", "vold", "qcomd", "mdmfd", "statsd", "tombd"];
+  var NAMES = ["sysmon", "statd", "msvc", "netmon", "powd", "sensd", "cored", "dlkd", "wmgr", "devh"];
   function randName() { return NAMES[Math.floor(Math.random() * NAMES.length)]; }
 
   $("b-randport").onclick = function () { $("in-port").value = randPort(); };
   $("b-randbin").onclick = function () { $("in-bin").value = randName(); };
   $("b-sysmon").onclick = function () { $("in-bin").value = "sysmon"; };
-  $("b-apply").onclick = apply;
-  $("b-refresh").onclick = function () { loadStatus(); toast("已刷新"); };
 
+  $("b-apply").onclick = function () {
+    applyRun(($("in-port").value || "").trim(), ($("in-bin").value || "").trim(), $("b-apply"), "应用并重启");
+  };
+
+  $("b-restart").onclick = function () {
+    if (!state.port || !state.bin) { show("out-apply", "pre-apply", "还没读到当前配置，先点「刷新状态」", true); return; }
+    $("in-port").value = state.port;
+    $("in-bin").value = state.bin;
+    applyRun(state.port, state.bin, $("b-restart"), "仅重启");
+  };
+
+  $("b-refresh").onclick = function () {
+    loadStatus().then(function () { toast("已刷新"); }, function (e) { toast("刷新失败: " + e.message); });
+  };
+
+  $("b-log").onclick = function () {
+    exec("tail -6 " + LOGFILE + " | tr '\\n' '|'").then(function (line) {
+      show("out-apply", "pre-apply", line ? line.replace(/\|/g, "\n") : "(日志为空)", false);
+    }, function (e) {
+      show("out-apply", "pre-apply", "读日志失败: " + e.message, true);
+    });
+  };
+
+  var autoBusy = false;
   $("sw-auto").onchange = function () {
     var on = $("sw-auto").checked;
-    var cmd = "sh " + MOD + "/set_config.sh " + (on ? "on" : "off");
-    exec(cmd).then(function (r) {
-      show("out-auto", "pre-auto", (r.stdout || "") + (r.stderr ? "\n" + r.stderr : ""), r.errno !== 0);
-      toast(on ? "开机自启已开启" : "开机自启已关闭");
+    if (autoBusy) return;
+    autoBusy = true;
+    exec("sh " + SCRIPT + " " + (on ? "on" : "off")).then(function (line) {
+      var m = parseKV(line);
+      if (String(line || "").split(";")[0] === "ERR") {
+        show("out-auto", "pre-auto", "设置失败: " + (m.msg || line), true);
+        toast("设置失败");
+      } else {
+        var txt = on ? "已开启开机自启" : "已关闭开机自启（当前实例仍在运行）";
+        if (on && m.run === "0") txt += "\n当前未运行，点上面的「仅重启」可立即启动";
+        show("out-auto", "pre-auto", txt, false);
+        toast(on ? "开机自启已开启" : "开机自启已关闭");
+      }
+      autoBusy = false;
+      loadStatus();
+    }, function (e) {
+      show("out-auto", "pre-auto", "执行失败: " + e.message, true);
+      autoBusy = false;
       loadStatus();
     });
   };
 
   $("b-copy").onclick = function () {
-    var el = $("pc-cmd");
-    var text = el.textContent;
+    var text = $("pc-cmd").textContent;
     try {
       navigator.clipboard.writeText(text).then(function () { toast("已复制"); }, function () { toast("复制失败，请长按选择"); });
     } catch (e) {
@@ -298,16 +434,25 @@
     if (!ver) { show("out-meta", "pre-meta", "版本不能为空", true); return; }
     if (code && !/^\d+$/.test(code)) { show("out-meta", "pre-meta", "版本代码必须是纯数字", true); return; }
 
-    var cmd = "sh " + MOD + "/set_config.sh name " + JSON.stringify(name) + " && sh " + MOD + "/set_config.sh version " + JSON.stringify(ver) + (code ? " " + code : "");
+    var cmd = "sh " + SCRIPT + " name " + q(name) + " && sh " + SCRIPT + " version " + q(ver) + (code ? " " + code : "");
     show("out-meta", "pre-meta", "保存中…");
-    exec(cmd).then(function (r) {
-      show("out-meta", "pre-meta", (r.stdout || "") + (r.stderr ? "\n" + r.stderr : ""), r.errno !== 0);
-      toast(r.errno === 0 ? "已保存" : "保存失败");
+    exec(cmd).then(function (line) {
+      var m = parseKV(line);
+      var ok = String(line || "").split(";")[0] === "OK";
+      show("out-meta", "pre-meta", ok
+        ? "已保存：\n显示名: " + (m.name || name) + "\n版本: " + (m.ver || ver) + " (" + (m.code || code || "-") + ")\n管理器里下拉刷新或退出重进可见"
+        : "保存失败: " + (m.msg || line), !ok);
+      toast(ok ? "已保存" : "保存失败");
       loadStatus();
+    }, function (e) {
+      show("out-meta", "pre-meta", "执行失败: " + e.message, true);
     });
   };
 
-  loadStatus();
+  loadStatus().then(null, function (e) {
+    setBadge($("s-run"), "读取失败", "warn");
+    show("out-apply", "pre-apply", "无法读取状态：" + e.message, true);
+  });
 })();
 </script>
 </body>
