@@ -5,6 +5,8 @@
 *.html text eol=lf
 *.js text eol=lf
 *.css text eol=lf
+*.py text eol=lf
+*.md text eol=lf
 # 二进制：不要做换行转换
 *.zip binary
 *.xz binary
