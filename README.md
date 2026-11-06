@@ -223,6 +223,14 @@ adb shell su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh version
 | 线程名（gum-js-loop、pool-frida-*） | ❌ |
 | D-Bus / portal 主动探测 | ❌ |
 
+## 与 gadget 模块的分工
+
+本模块管「整机、任意进程、临时调试」。如果要的是**固定几个 App 长期 hook、零监听端口、不留 maps/线程名痕迹**，用配套的另一个项目：
+
+→ [hex91/zygisk-gadget-stealth](https://github.com/hex91/zygisk-gadget-stealth)：基于 Zygisk 把官方 `frida-gadget 17.5.2` 注入指定 App，默认 `script` 模式不占端口，maps 匿名化 + 线程名伪装 + logcat 静默，WebUI 可配可查状态。
+
+两者可以同时开机（端口 39527 / 27052 不冲突），但**不要用本模块的 server 去 attach 已经加载 gadget 的进程**——两份 Gum 在同一地址做 inline hook 会互相踩。
+
 ## 管理命令速查
 
 ```bash
