@@ -1,4 +1,11 @@
-# Android shell 脚本必须 LF，否则设备上执行会报 "not found"
+# Android shell 脚本 / WebUI 必须 LF，否则设备上执行会报 "not found"
 *.sh text eol=lf
 *.prop text eol=lf
 *.txt text eol=lf
+*.html text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+# 二进制：不要做换行转换
+*.zip binary
+*.xz binary
+frida-server binary
