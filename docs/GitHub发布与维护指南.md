@@ -84,14 +84,17 @@ gh repo rename new-name --repo hex91/old-name           # 改名
 成品 zip 位于 `dist/frida_patched_server-17.5.2-android16.zip`。
 
 ```bash
-gh release create v1.0.0 \
+gh release create v1.5.0 \
   "dist/frida_patched_server-17.5.2-android16.zip" \
   --repo hex91/frida-persistent-module \
-  --title "frida-persistent-module v3 (frida-server 17.5.2-android16)" \
-  --notes "KernelSU/Magisk 持久化模块：sijan2 补丁版 frida-server 17.5.2-android16，支持自定义端口与进程名。安装见 docs/frida持久化模块使用文档.md"
+  --title "v1.5.0 — 一句话说明本次变化" \
+  --notes "变更点清单；安装方式：SukiSU/KernelSU 管理器选 zip 安装，重启生效。"
 ```
 
 发布后到仓库 **Releases** 页面即可下载。要追加多个文件，在命令后继续跟路径即可。
+
+> 当前只保留一个 Release（`v1.4.2`，Latest）。历史上误发的降级包（`v1.0.0`、`v1.1.0`）已删除，避免有人下到功能更少的旧版。
+> 删除某个 release 及其 tag：`gh release delete <tag> --repo hex91/frida-persistent-module --yes --cleanup-tag`
 
 ---
 
