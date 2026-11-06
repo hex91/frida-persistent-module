@@ -10,9 +10,13 @@
 
 | 文件 | 作用 |
 |---|---|
-| `module.prop` | 模块信息 |
-| `service.sh` | 开机自启脚本（读 config.sh → 复制改名副本 → 启动 server） |
-| `config.sh` | **配置文件：端口 + 进程名**（本版新增） |
+| `module.prop` | 模块信息（`description` 动态显示当前端口/进程名） |
+| `service.sh` | 开机自启脚本（播种 config.sh → 复制改名副本 → 启动 server） |
+| `config.default.sh` | 出厂默认配置（升级会覆盖，勿存个人配置） |
+| `config.sh` | **个人配置：端口 + 进程名**（不在 zip 内，升级不丢失；首次启动自动生成） |
+| `set_config.sh` | 配置助手（改端口/进程名并立即生效） |
+| `sync_desc.sh` | 把当前配置写回管理器模块页提示 |
+| `action.sh` | 管理器「操作」按钮脚本（显示当前配置与命令） |
 | `frida-server` | server 母本二进制（保留原名，作为改名副本的来源） |
 
 工作流程：开机 → 等 boot_completed → 检查 `disable` 开关 → 若配置了 `BIN_NAME` 且改名副本不存在则从母本复制 → 按配置的进程名防重复启动 → 以 `-l 127.0.0.1:PORT` 启动。
@@ -85,6 +89,23 @@ adb shell "ps -A | grep -i frida"        # 应无输出
 adb shell "pidof frida-server"           # 应无输出
 adb shell "netstat -tln | grep 27042"    # 应无输出
 ```
+
+---
+
+### 3.5 在管理器里直接看到当前配置（不用记）
+
+SukiSU / KernelSU 模块卡片下方（`module.prop` 的 `description`）会显示：
+
+```
+当前端口 39527 ・ 进程名 sysmon ｜ 修改: sh .../set_config.sh <新端口> <新进程名>（立即生效）
+```
+
+- 开机时 `service.sh`、改配置时 `set_config.sh` 都会调用 `sync_desc.sh` 自动刷新
+- 手动编辑 `config.sh` 后，执行 `set_config.sh sync` 即可刷新提示（不必重启 server）
+- 管理器若缓存旧值：退出重进模块页 / 下拉刷新 / 杀掉管理器重开
+- 模块页「操作」按钮（`action.sh`）会弹出当前配置、运行状态与常用命令
+
+> 升级提示：`config.sh` 不在模块 zip 内（zip 只有 `config.default.sh`），升级模块不会覆盖你的端口/进程名。
 
 ---
 

@@ -1,0 +1,4 @@
+# Android shell 脚本必须 LF，否则设备上执行会报 "not found"
+*.sh text eol=lf
+*.prop text eol=lf
+*.txt text eol=lf

@@ -1,0 +1,5 @@
+# 52MB 母本二进制不入库（只打包进 dist 的模块 zip）
+ksu_module/frida-server
+
+# 运行产物
+*.tmp

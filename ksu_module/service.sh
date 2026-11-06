@@ -1,12 +1,23 @@
 #!/system/bin/sh
-# frida-server (sijan2 patched 17.5.2-android16) autostart — v2 可配置端口/进程名
-# runs as root in late_start service context (KernelSU/Magisk)
+# frida-server (sijan2 patched 17.5.2-android16) autostart — v3 可配置端口/进程名
+# runs as root in late_start service context (KernelSU / SukiSU / Magisk)
 MODDIR=${0%/*}
 
 # 默认值（可被 config.sh 覆盖）
 PORT=27042
 BIN_NAME=frida-server
+
+# 用户配置不随模块升级丢失：config.sh 不在 zip 内，缺失时从 config.default.sh 播种
+if [ ! -f "$MODDIR/config.sh" ] && [ -f "$MODDIR/config.default.sh" ]; then
+  cp "$MODDIR/config.default.sh" "$MODDIR/config.sh" 2>/dev/null
+  chmod 600 "$MODDIR/config.sh" 2>/dev/null
+fi
 [ -f "$MODDIR/config.sh" ] && . "$MODDIR/config.sh"
+
+# 同步管理器（SukiSU / KernelSU）模块页提示：当前端口 / 进程名 / 修改方法
+if [ -f "$MODDIR/sync_desc.sh" ]; then
+  sh "$MODDIR/sync_desc.sh" >/dev/null 2>&1
+fi
 
 (
   # wait for boot complete

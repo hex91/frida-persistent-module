@@ -6,6 +6,12 @@
 开机自动启动 frida-server（sijan2 补丁版 17.5.2，Android 14/15/16 兼容）。
 监听 127.0.0.1:<PORT>，PC 端通过 adb forward 连接。
 
+【先看这里：当前配置在哪看】
+打开 SukiSU / KernelSU 管理器 → 模块页，本模块卡片下方会直接显示：
+    当前端口 39527 ・ 进程名 sysmon ｜ 修改: sh .../set_config.sh <新端口> <新进程名>
+改完配置后重进模块页或下拉刷新即可看到最新值。
+模块页的「操作」按钮也会弹出当前配置和运行状态。
+
 【怎么改端口 / 进程名】(对抗 frida 检测)
 
 方法一：配置助手（推荐，改完立即生效）
@@ -16,11 +22,16 @@
     修改示例：
     sh /data/adb/modules/frida_patched_server/set_config.sh 39527 sysmon
 
-方法二：直接编辑本目录下的 config.sh（MT管理器等 root 文件管理器）
+方法二：直接编辑同目录下的 config.sh（MT管理器等 root 文件管理器）
     PORT=27042        ← 端口
     BIN_NAME=frida-server  ← 进程名（也是文件名, ≤15 字符）
     改完重启手机，或执行：
     sh /data/adb/modules/frida_patched_server/set_config.sh restart
+    只想刷新管理器里的提示（不重启 server）：
+    sh /data/adb/modules/frida_patched_server/set_config.sh sync
+
+注意：config.default.sh 是出厂默认值（升级会覆盖），个人配置写在 config.sh。
+      config.sh 不在模块 zip 内，升级模块不会丢你的端口/进程名。
 
 【进程名规则】
   - 即磁盘文件名，Linux 进程名上限 15 字符
@@ -37,3 +48,4 @@
 
 【完整文档】
     PC 端: Desktop\hans\workbuddy\Android逆向\frida持久化模块使用文档.md
+    GitHub: https://github.com/hex91/frida-persistent-module

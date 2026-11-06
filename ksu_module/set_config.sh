@@ -1,12 +1,30 @@
 #!/system/bin/sh
-# frida 模块配置助手 — 修改端口/进程名并立即生效 (v2 加固版)
-# 用法(无参数): sh set_config.sh              → 查看当前配置和用法
-# 用法(修改):   sh set_config.sh <端口> <进程名>  → 写入配置并立即重启生效
-# 用法(重启):   sh set_config.sh restart      → 按当前配置重启 server
+# frida 模块配置助手 — 修改端口/进程名并立即生效 (v3)
+# 用法(无参数): sh set_config.sh                  → 查看当前配置和用法
+# 用法(修改):   sh set_config.sh <端口> <进程名>   → 写入配置并立即重启生效
+# 用法(重启):   sh set_config.sh restart          → 按当前配置重启 server
+# 用法(刷新):   sh set_config.sh sync             → 仅刷新管理器模块页的配置提示
 # 示例:         su -c 'sh /data/adb/modules/frida_patched_server/set_config.sh 39527 sysmon'
 MODDIR=${0%/*}
-CONFIG="$MODDIR/config.sh"
+CONFIG="$MODDIR/config.sh"           # 个人配置（不在 zip 内，升级不覆盖）
+DEFAULT="$MODDIR/config.default.sh"  # 出厂默认值（升级会覆盖）
 LOG=/data/local/tmp/frida_patched.log
+
+# 读取当前生效配置（个人配置优先，其次默认值）
+resolve_config() {
+  PORT=27042
+  BIN_NAME=frida-server
+  if [ -f "$CONFIG" ]; then
+    . "$CONFIG"
+  elif [ -f "$DEFAULT" ]; then
+    . "$DEFAULT"
+  fi
+}
+
+# 刷新管理器模块页提示（description）
+refresh_desc() {
+  [ -f "$MODDIR/sync_desc.sh" ] && sh "$MODDIR/sync_desc.sh" >/dev/null 2>&1
+}
 
 # 杀掉本模块拉起的所有 server 实例
 # 判定: cmdline 以 "$MODDIR/" 开头 = server 二进制(脚本进程以 sh 开头, 不会误杀自己)
@@ -49,8 +67,15 @@ wait_ready() {
 
 # ---------- 无参数: 显示当前配置和用法 ----------
 if [ $# -eq 0 ]; then
+  resolve_config
   echo "=== 当前配置 ==="
-  cat "$CONFIG" 2>/dev/null || echo "(config.sh 不存在, 使用默认值 27042/frida-server)"
+  echo "端口:   $PORT"
+  echo "进程名: $BIN_NAME"
+  if [ -f "$CONFIG" ]; then
+    echo "配置文件: $CONFIG"
+  else
+    echo "配置文件: 尚未创建（当前为默认值，首次启动会自动生成）"
+  fi
   echo ""
   echo "=== 当前运行中的实例 ==="
   for p in /proc/[0-9]*; do
@@ -64,16 +89,24 @@ if [ $# -eq 0 ]; then
   echo "修改并立即生效: su -c 'sh $MODDIR/set_config.sh <端口> <进程名>'"
   echo "示例:           su -c 'sh $MODDIR/set_config.sh 39527 sysmon'"
   echo "仅重启 server:  su -c 'sh $MODDIR/set_config.sh restart'"
+  echo "刷新管理器提示: su -c 'sh $MODDIR/set_config.sh sync'"
   echo "注意: 改了端口后, PC 端跑脚本要带端口号:"
   echo "      python run_frida.py <脚本.js> [时长] <端口>"
   exit 0
 fi
 
+# ---------- sync: 仅刷新管理器模块页提示 ----------
+if [ "$1" = "sync" ]; then
+  resolve_config
+  refresh_desc
+  echo "[OK] 已刷新模块页提示：端口 $PORT / 进程名 $BIN_NAME"
+  echo "     重进模块页或下拉刷新即可看到最新值"
+  exit 0
+fi
+
 # ---------- restart: 按当前配置重启 ----------
 if [ "$1" = "restart" ]; then
-  . "$CONFIG" 2>/dev/null
-  [ -z "$BIN_NAME" ] && BIN_NAME=frida-server
-  [ -z "$PORT" ] && PORT=27042
+  resolve_config
   echo "[*] 停止旧实例..."
   kill_all_servers
   echo "[*] 按配置启动: $BIN_NAME @ 127.0.0.1:$PORT"
@@ -116,6 +149,10 @@ esac
 
 echo "[*] 写入配置: PORT=$PORT BIN_NAME=$BIN_NAME"
 printf 'PORT=%s\nBIN_NAME=%s\n' "$PORT" "$BIN_NAME" > "$CONFIG"
+chmod 600 "$CONFIG" 2>/dev/null
+
+# 先把新值写进管理器模块页提示，再重启 server
+refresh_desc
 
 echo "[*] 停止所有旧实例..."
 kill_all_servers
@@ -129,6 +166,7 @@ if wait_ready "$BIN_NAME" "$PORT"; then
   echo "进程: $BIN_NAME (pid $(pidof "$BIN_NAME"))"
   echo "端口: 127.0.0.1:$PORT 监听中"
   echo "PC 端: adb forward tcp:$PORT tcp:$PORT 后, 脚本带端口 $PORT"
+  echo "提示: 管理器模块页已同步为「端口 $PORT / 进程名 $BIN_NAME」"
 else
   echo ""
   echo "=== 未就绪, 查日志: cat $LOG ==="
